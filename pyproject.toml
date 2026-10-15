@@ -16,6 +16,7 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "pages/*.py" = ["E402"]
+"tests/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
