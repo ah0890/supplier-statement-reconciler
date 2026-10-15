@@ -10,6 +10,7 @@ from src.utils.dates import format_date
 from ui.charts import difference_breakdown, status_breakdown
 from ui.components import (
     badge,
+    bullet_list,
     dataframe,
     empty_state,
     kpi_row,
@@ -17,10 +18,23 @@ from ui.components import (
     page_header,
     status_badge,
 )
-from ui.state import current_reconciliation, reconciliation_service, set_current
+from ui.state import create_demo, current_reconciliation, flash, reconciliation_service, set_current
 
 service = reconciliation_service()
 page_header("Dashboard", "First-pass reconciliation of supplier statements against your books.")
+
+
+def demo_button(primary: bool = False) -> None:
+    if st.button("Load demo reconciliation", icon=":material/science:",
+                 type="primary" if primary else "secondary",
+                 help="Creates a reconciliation from synthetic DEMO files (PDF statement, CSV "
+                 "accounting export and payments) so you can explore the workflow."):  # fmt: skip
+        with st.spinner("Generating demo files and importing them…"):
+            recon_id = create_demo()
+        set_current(recon_id)
+        flash("Demo reconciliation created from synthetic data. Next: run the reconciliation.")
+        st.switch_page("pages/reconciliation.py")
+
 
 reconciliations = service.list()
 if not reconciliations:
@@ -29,8 +43,12 @@ if not reconciliations:
         "Create a reconciliation, upload a supplier statement and your accounting export, and "
         "the application will match them and highlight what needs attention.",
     )
-    st.page_link("pages/new_reconciliation.py", label="Create your first reconciliation",
-                 icon=":material/add_circle:")  # fmt: skip
+    left, right = st.columns([1, 3])
+    with left:
+        demo_button(primary=True)
+    with right:
+        st.page_link("pages/new_reconciliation.py", label="Create your own reconciliation",
+                     icon=":material/add_circle:")  # fmt: skip
     st.stop()
 
 recon = current_reconciliation()
@@ -133,13 +151,15 @@ else:
 
         with st.container(border=True):
             st.markdown("##### Summary")
-            for line in summary_messages(summary.status_counts, summary.pending_reviews):
-                st.markdown(f"- {line}")
+            bullet_list(summary_messages(summary.status_counts, summary.pending_reviews))
             st.page_link("pages/reconciliation.py", label="Open reconciliation results",
                          icon=":material/rule:")  # fmt: skip
 
 st.divider()
-st.subheader("All reconciliations")
+header, action = st.columns([3, 1])
+header.subheader("All reconciliations")
+with action:
+    demo_button()
 records = [
     {
         "ID": r.id,

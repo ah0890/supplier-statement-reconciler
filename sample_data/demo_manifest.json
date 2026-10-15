@@ -1,0 +1,93 @@
+{
+  "note": "DEMO DATA - synthetic and fictional. Expected scenario membership.",
+  "supplier": "Brightline Industrial Supplies Ltd",
+  "period_start": "2026-09-01",
+  "period_end": "2026-09-30",
+  "opening_balance": "3250.00",
+  "closing_balance": "197790.40",
+  "scenarios": {
+    "exact": [
+      "INV-24101",
+      "INV-24102",
+      "INV-24104",
+      "INV-24105",
+      "INV-24108",
+      "INV-24114",
+      "INV-24116",
+      "INV-24117",
+      "INV-24119",
+      "INV-24122",
+      "INV-24123",
+      "INV-24126",
+      "INV-24127",
+      "INV-24128",
+      "INV-24129",
+      "INV-24130",
+      "INV-24131",
+      "INV-24132",
+      "INV-24133",
+      "INV-24134",
+      "INV-24135",
+      "INV-24136",
+      "INV-24137",
+      "INV-24138",
+      "INV-24139",
+      "INV-24140"
+    ],
+    "missing_in_accounting": [
+      "INV-24107",
+      "INV-24113",
+      "INV-24125"
+    ],
+    "accounting_only": [
+      "INV-24095"
+    ],
+    "accounting_only_after_period": [
+      "INV-24146"
+    ],
+    "duplicate_in_accounting": [
+      "INV-24106"
+    ],
+    "amount_mismatch": [
+      "INV-24103",
+      "INV-24118"
+    ],
+    "date_mismatch": [
+      "INV-24110",
+      "INV-24120"
+    ],
+    "reference_format": [
+      "INV-24109",
+      "INV-24111",
+      "INV-24112",
+      "INV-24115"
+    ],
+    "fuzzy_typo": [
+      "INV-24121"
+    ],
+    "within_tolerance": [
+      "INV-24124"
+    ],
+    "credit_note_matched": [
+      "CN-5012"
+    ],
+    "credit_note_missing": [
+      "CN-5013"
+    ],
+    "payment_matched": [
+      "PMT-24901"
+    ],
+    "payment_run_grouped": [
+      "PMT-24902"
+    ],
+    "payment_amount_date": [
+      "BACS 1250"
+    ],
+    "payment_not_on_statement": [
+      "PMT-24904"
+    ],
+    "unresolved_blank_reference": [
+      "Delivery charge"
+    ]
+  }
+}

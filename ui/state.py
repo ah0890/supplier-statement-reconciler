@@ -56,3 +56,13 @@ def review_service():
     from src.services.review_service import ReviewService
 
     return ReviewService(get_database(), reconciliation_service())
+
+
+def create_demo() -> int:
+    """Create a DEMO reconciliation from freshly generated synthetic files."""
+    import uuid
+
+    from src.services.demo_data import create_demo_reconciliation
+
+    work_dir = get_settings().data_dir / "demo" / uuid.uuid4().hex[:8]
+    return create_demo_reconciliation(reconciliation_service(), import_service(), work_dir)
