@@ -89,7 +89,7 @@ and the number of exceptions.*
 
 ## Architecture
 
-```
+```text
 Streamlit UI (app.py, pages/, ui/)        presentation only
         │
 Services (src/services)                   import · normalisation · reconciliation · review · export · report
@@ -116,7 +116,7 @@ note on PyMuPDF (AGPL).
 
 Requires Python 3.12 or newer.
 
-**Windows**
+### Windows
 
 ```bat
 python -m venv .venv
@@ -124,7 +124,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-**macOS / Linux**
+### macOS / Linux
 
 ```bash
 python3 -m venv .venv
@@ -160,7 +160,7 @@ it used.
 streamlit run app.py
 ```
 
-Then open http://localhost:8501. To try it immediately, click **Load demo reconciliation** on
+Then open <http://localhost:8501>. To try it immediately, click **Load demo reconciliation** on
 the dashboard and then **Run reconciliation**.
 
 ## Generating demo data
@@ -225,16 +225,20 @@ Details: [docs/SECURITY.md](docs/SECURITY.md). Client onboarding:
 
 ## Roadmap
 
-**Xero integration.** OAuth 2.0 connection; import bills (`ACCPAY`), supplier credit notes
+### Xero integration
+
+OAuth 2.0 connection; import bills (`ACCPAY`), supplier credit notes
 and payments for a contact and period directly via the Accounting API. The provider
 interface (`src/accounting/xero_provider.py`) is in place and reports "Not configured" until
 then. No API calls are faked.
 
-**QuickBooks Online integration.** OAuth 2.0; import `Bill`, `VendorCredit` and
+### QuickBooks Online integration
+
+OAuth 2.0; import `Bill`, `VendorCredit` and
 `BillPayment` records for a vendor. The interface is in place
 (`src/accounting/quickbooks_provider.py`).
 
-**Later phases**
+### Later phases
 
 - Multiple suppliers per run and supplier-specific parsing profiles
 - Cloud deployment, multi-user accounts and role-based access
@@ -246,7 +250,7 @@ then. No API calls are faked.
 
 ## Project structure
 
-```
+```text
 app.py                  Streamlit entry point
 pages/                  UI pages
 ui/                     theme, components, charts, session state
