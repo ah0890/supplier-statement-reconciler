@@ -52,7 +52,10 @@ with st.sidebar:
         ids = [r.id for r in reconciliations]
         labels = {r.id: reconciliation_label(r) for r in reconciliations}
         selected = current_id()
-        index = ids.index(selected) if selected in ids else None
+        if selected not in ids:  # default to the most recent reconciliation
+            selected = ids[0]
+            set_current(selected)
+        index = ids.index(selected)
         choice = st.selectbox(
             "Current reconciliation",
             ids,

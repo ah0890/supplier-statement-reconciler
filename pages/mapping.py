@@ -39,7 +39,6 @@ COMMON_FIELDS = {
         ColumnField.DESCRIPTION,
     ),
 }  # fmt: skip
-REQUIRED = {ColumnField.DATE, ColumnField.INVOICE_NUMBER}
 DAYFIRST_OPTIONS = {"Detect automatically": None, "Day first (DD/MM/YYYY)": True,
                     "Month first (MM/DD/YYYY)": False}  # fmt: skip
 DECIMAL_OPTIONS = {"Detect automatically": None, "1,234.56": False, "1.234,56": True}
@@ -78,12 +77,12 @@ for tab, role in zip(tabs, roles, strict=True):
                 current = mapping.column_for(field)
                 confidence = mapping.confidence.get(field.value)
                 label = FIELD_LABELS[field]
-                if field in REQUIRED and not (
-                    role == FileRole.PAYMENTS and field == ColumnField.INVOICE_NUMBER
-                ):
+                if field == ColumnField.DATE:
                     label += " *"
-                if field == ColumnField.AMOUNT:
-                    label += " *"  # amount, debit/credit or payment - at least one
+                elif field == ColumnField.INVOICE_NUMBER and role != FileRole.PAYMENTS:
+                    label += " * (or Reference)"
+                elif field == ColumnField.AMOUNT:
+                    label += " * (or Debit / Credit)"
                 with columns[index % 2]:
                     choice = st.selectbox(
                         label,

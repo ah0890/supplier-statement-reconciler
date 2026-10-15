@@ -15,7 +15,7 @@ from ui.state import CURRENT_KEY
 
 STATEMENT = b"""Date,Invoice No,Details,Debit,Credit,Balance
 01/09/2026,,Balance brought forward,,,500.00
-03/09/2026,INV-1001,Widgets,1200.00,,1700.00
+03/09/2026,INV-1001,Widgets,"1,200.00",,"1,700.00"
 05/09/2026,INV-1002,Bolts,300.00,,2000.00
 06/09/2026,INV-1003,Nuts,80.00,,2080.00
 10/09/2026,PMT-1,Payment received,,500.00,1580.00

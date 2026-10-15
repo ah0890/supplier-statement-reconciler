@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import html
 from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 
 import pandas as pd
@@ -149,7 +150,7 @@ def side_panel(title: str, fields: Sequence[tuple[str, str]], highlight: set[str
 
 
 def money_column(label: str) -> st.column_config.NumberColumn:
-    return st.column_config.NumberColumn(label, format="%.2f")
+    return st.column_config.NumberColumn(label, format="accounting")
 
 
 def dataframe(records: Sequence[dict], *, height: int | None = None, key: str | None = None,
@@ -158,18 +159,27 @@ def dataframe(records: Sequence[dict], *, height: int | None = None, key: str | 
     frame = pd.DataFrame(list(records))
     config = {}
     for column in frame.columns:
+        values = [v for v in frame[column] if v is not None and v == v]
         lower = column.lower()
-        if any(word in lower for word in ("amount", "difference", "balance", "total")) and not (
-            lower.startswith("days")
-        ):
-            frame[column] = frame[column].map(lambda v: float(v) if v is not None else None)
+        numeric = bool(values) and all(
+            isinstance(v, Decimal | int | float) and not isinstance(v, bool) for v in values
+        )
+        dates = bool(values) and all(isinstance(v, date) for v in values)
+        if numeric and any(w in lower for w in ("amount", "difference", "balance", "total",
+                                                "payments", "credits")):  # fmt: skip
+            frame[column] = pd.to_numeric(
+                frame[column].map(lambda v: None if v is None else float(v)), errors="coerce"
+            )
             config[column] = money_column(column)
-        elif "date" in lower:
+        elif dates:
+            frame[column] = pd.to_datetime(frame[column], errors="coerce")
             config[column] = st.column_config.DateColumn(column, format="DD MMM YYYY")
-        elif column == "Confidence":
+        elif column == "Confidence" and numeric:
             config[column] = st.column_config.ProgressColumn(
                 column, min_value=0, max_value=100, format="%d"
             )
+        elif frame[column].dtype == object:
+            frame[column] = frame[column].map(lambda v: "" if v is None else v)
     kwargs = {"hide_index": True, "width": "stretch", "column_config": config}
     if height:
         kwargs["height"] = height
@@ -191,3 +201,8 @@ def workflow_badge(recon: ReconciliationRow) -> str:
     label = workflow_label(recon)
     tone = "amber" if "re-run" in label else "blue" if "review" in label else "grey"
     return badge(label, tone)
+
+
+def bullet_list(lines: Sequence[str]) -> None:
+    """Render lines as one compact bulleted list."""
+    st.markdown("\n".join(f"- {esc(line)}" for line in lines))

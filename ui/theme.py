@@ -23,6 +23,10 @@ h1, h2, h3 { color: var(--ssr-ink); letter-spacing: -0.01em; }
 [data-testid="stSidebar"] { background: #10263D; }
 [data-testid="stSidebar"] * { color: #E6ECF3 !important; }
 [data-testid="stSidebarNav"] a[aria-current="page"] { background: rgba(255,255,255,0.10); }
+[data-testid="stSidebar"] [data-testid="stSelectbox"] input,
+[data-testid="stSidebar"] [data-testid="stSelectbox"] svg,
+[data-testid="stSidebar"] [data-testid="stSelectbox"] path {
+  color: var(--ssr-ink) !important; -webkit-text-fill-color: var(--ssr-ink) !important; }
 
 .ssr-header { display:flex; justify-content:space-between; align-items:flex-end;
   border-bottom: 1px solid var(--ssr-border); padding-bottom: .75rem; margin-bottom: 1.25rem; }
@@ -31,7 +35,7 @@ h1, h2, h3 { color: var(--ssr-ink); letter-spacing: -0.01em; }
 .ssr-context { color: var(--ssr-muted); font-size: .85rem; text-align: right; }
 
 .ssr-card { background: var(--ssr-surface); border: 1px solid var(--ssr-border);
-  border-radius: 10px; padding: 1rem 1.1rem; height: 100%; }
+  border-radius: 10px; padding: 1rem 1.1rem; height: 100%; min-height: 128px; }
 .ssr-kpi-label { color: var(--ssr-muted); font-size: .78rem; text-transform: uppercase;
   letter-spacing: .04em; font-weight: 600; }
 .ssr-kpi-value { color: var(--ssr-ink); font-size: 1.55rem; font-weight: 650;

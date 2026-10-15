@@ -15,6 +15,7 @@ from src.models.reconciliation import (
 from src.services.reconciliation_service import ReconciliationServiceError
 from src.services.result_views import build_rows, summary_messages
 from ui.components import (
+    bullet_list,
     dataframe,
     kpi_row,
     money,
@@ -119,8 +120,7 @@ kpi_row(
          if balance.status.value == "BALANCE_MISMATCH" else "grey"),
     ]
 )  # fmt: skip
-for line in summary_messages(summary.status_counts, summary.pending_reviews):
-    st.markdown(f"- {line}")
+bullet_list(summary_messages(summary.status_counts, summary.pending_reviews))
 
 filters = st.columns([2, 2, 1])
 present = [s for s in MatchStatus if summary.status_counts.get(s.value)]

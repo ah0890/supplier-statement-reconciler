@@ -75,8 +75,10 @@ def difference_breakdown(explained: dict[str, Decimal], unexplained: Decimal | N
     items = list(explained.items())
     if unexplained:
         items.append(("Unexplained", unexplained))
-    labels = [name for name, _ in items]
     values = [float(value) for _, value in items]
+    # Values sit in the category labels: text beside negative bars would collide with them.
+    labels = [f"{name}  {value:,.2f}" for name, value in zip((n for n, _ in items), values,
+                                                             strict=True)]  # fmt: skip
     figure = go.Figure(
         go.Bar(
             x=values,
@@ -86,11 +88,7 @@ def difference_breakdown(explained: dict[str, Decimal], unexplained: Decimal | N
                 "color": [POSITIVE if v >= 0 else NEGATIVE for v in values],
                 "cornerradius": 4,
             },
-            text=[f"{v:,.2f}" for v in values],
-            textposition="outside",
-            textfont={"color": INK},
-            cliponaxis=False,
-            hovertemplate="%{y}: %{x:,.2f}<extra></extra>",
+            hovertemplate="%{y}<extra></extra>",
         )
     )
     return _layout(figure, max(160, 38 * len(items) + 40))

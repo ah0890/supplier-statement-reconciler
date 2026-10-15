@@ -13,6 +13,7 @@ from src.services.export_service import (
 from src.services.report_service import ReportService
 from src.services.result_views import summary_messages
 from ui.components import (
+    bullet_list,
     dataframe,
     empty_state,
     kpi_row,
@@ -58,8 +59,7 @@ kpi_row(
          "red" if balance.unexplained_difference else "green"),
     ]
 )  # fmt: skip
-for line in summary_messages(summary.status_counts, summary.pending_reviews):
-    st.markdown(f"- {line}")
+bullet_list(summary_messages(summary.status_counts, summary.pending_reviews))
 
 st.subheader("Downloads")
 exporter, reporter = ExportService(), ReportService()
