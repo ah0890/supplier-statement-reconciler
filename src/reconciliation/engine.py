@@ -14,18 +14,19 @@ from collections.abc import Sequence
 from datetime import date
 
 from src.models.reconciliation import (
-    BalanceCheckResult,
     BalanceStatus,
     MatchMethod,
     MatchResult,
     MatchStatus,
     ReconciliationConfig,
+    ReconciliationOutcome,
     ReconciliationRun,
     ReconciliationSummary,
     ResultKind,
     ReviewStatus,
 )
 from src.models.transaction import CanonicalTransaction, StatementBalances, TransactionType
+from src.reconciliation.balance_checker import BalanceChecker
 from src.reconciliation.confidence import ConfidenceScorer
 from src.reconciliation.duplicate_detector import DuplicateDetector, DuplicateFinding
 from src.reconciliation.matcher import InvoiceMatcher, MatchPair
@@ -58,6 +59,7 @@ class ReconciliationEngine:
         self.duplicates = DuplicateDetector(self.config)
         self.mismatches = MismatchDetector(self.config)
         self.payments = PaymentReconciler(self.config, self.scorer)
+        self.balance_checker = BalanceChecker(self.config)
 
     def run(
         self,
@@ -136,14 +138,27 @@ class ReconciliationEngine:
             unallocated += side_unallocated
             results += overpaid
 
+        # 5. Balances.
+        balance = self.balance_checker.check(statement, accounting, payments, balances, results)
+        if balance.status == BalanceStatus.BALANCE_MISMATCH:
+            results.append(
+                MatchResult(
+                    status=MatchStatus.BALANCE_MISMATCH,
+                    kind=ResultKind.BALANCE,
+                    statement_amount=balance.supplier_closing_balance,
+                    amount_difference=balance.difference,
+                    matching_reason=balance.reason,
+                    issues=["STATEMENT_ARITHMETIC"],
+                    requires_review=True,
+                    review_status=ReviewStatus.PENDING,
+                )
+            )
+
         run = ReconciliationRun(
             results=results,
             allocations=allocations,
             unallocated_payments=unallocated,
-            balance=BalanceCheckResult(
-                status=BalanceStatus.BALANCE_CHECK_NOT_POSSIBLE,
-                reason="Balance check has not been evaluated.",
-            ),
+            balance=balance,
             config=self.config,
         )
         run.summary = self._summarise(run, statement, accounting, payments)
@@ -273,12 +288,62 @@ class ReconciliationEngine:
         accounting: Sequence[CanonicalTransaction],
         payments: Sequence[CanonicalTransaction],
     ) -> ReconciliationSummary:
-        counts = Counter(r.status.value for r in run.results)
-        return ReconciliationSummary(
-            statement_transactions=len(statement),
-            accounting_transactions=len(accounting),
-            payment_records=len(payments),
-            status_counts=dict(counts),
-            pending_reviews=sum(r.review_status == ReviewStatus.PENDING for r in run.results),
-            exceptions=sum(r.is_exception for r in run.results),
+        return summarise(run, len(statement), len(accounting), len(payments))
+
+
+def summarise(
+    run: ReconciliationRun, statement_count: int, accounting_count: int, payment_count: int
+) -> ReconciliationSummary:
+    """Counts and a *suggested* outcome. The user always makes the final decision."""
+    counts = Counter(r.status.value for r in run.results)
+    pending = sum(r.review_status == ReviewStatus.PENDING for r in run.results)
+    exceptions = sum(r.is_exception for r in run.results)
+    outcome, why = suggest_outcome(run, exceptions, pending)
+    return ReconciliationSummary(
+        statement_transactions=statement_count,
+        accounting_transactions=accounting_count,
+        payment_records=payment_count,
+        status_counts=dict(counts),
+        pending_reviews=pending,
+        exceptions=exceptions,
+        suggested_outcome=outcome,
+        suggested_outcome_reason=why,
+    )
+
+
+def suggest_outcome(
+    run: ReconciliationRun, exceptions: int, pending: int
+) -> tuple[ReconciliationOutcome, str]:
+    balance = run.balance
+    tolerance = run.config.amount_tolerance
+    unexplained = balance.unexplained_difference
+    if balance.status == BalanceStatus.BALANCE_MISMATCH:
+        return (
+            ReconciliationOutcome.NOT_RECONCILED,
+            "The supplier statement does not add up to its closing balance.",
         )
+    if pending:
+        return (
+            ReconciliationOutcome.NOT_RECONCILED,
+            f"{pending} item(s) still need a review decision.",
+        )
+    if unexplained is not None and abs(unexplained) > tolerance:
+        return (
+            ReconciliationOutcome.NOT_RECONCILED,
+            f"{format_money(unexplained)} of the difference between the statement and the "
+            "accounting records is not explained by the identified exceptions.",
+        )
+    if exceptions == 0:
+        note = (
+            ""
+            if balance.status == BalanceStatus.BALANCED
+            else " (the balance check was not possible - please confirm balances manually)"
+        )
+        return ReconciliationOutcome.RECONCILED, "All transactions matched" + note + "."
+    return (
+        ReconciliationOutcome.RECONCILED_WITH_EXCEPTIONS,
+        f"{exceptions} exception(s) identified; the statement difference is fully explained "
+        "by them."
+        if unexplained is not None
+        else f"{exceptions} exception(s) identified; balances could not be compared.",
+    )

@@ -101,6 +101,7 @@ class ResultKind(StrEnum):
     INVOICE = "INVOICE"
     CREDIT_NOTE = "CREDIT_NOTE"
     PAYMENT = "PAYMENT"
+    BALANCE = "BALANCE"
 
 
 class ReconciliationConfig(BaseModel):
