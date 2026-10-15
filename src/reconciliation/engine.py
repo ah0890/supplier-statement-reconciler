@@ -30,6 +30,7 @@ from src.reconciliation.confidence import ConfidenceScorer
 from src.reconciliation.duplicate_detector import DuplicateDetector, DuplicateFinding
 from src.reconciliation.matcher import InvoiceMatcher, MatchPair
 from src.reconciliation.mismatch_detector import MismatchDetector
+from src.reconciliation.payments import PaymentReconciler
 from src.utils.dates import format_date
 from src.utils.money import format_money
 
@@ -56,6 +57,7 @@ class ReconciliationEngine:
         self.matcher = InvoiceMatcher(self.config, self.scorer)
         self.duplicates = DuplicateDetector(self.config)
         self.mismatches = MismatchDetector(self.config)
+        self.payments = PaymentReconciler(self.config, self.scorer)
 
     def run(
         self,
@@ -118,8 +120,26 @@ class ReconciliationEngine:
             else:
                 results.append(self._accounting_only_result(txn, period_end))
 
+        # 4. Payments and allocation.
+        statement_payments = [t for t in statement if not t.is_document]
+        recorded_payments = [*payments, *(t for t in accounting if not t.is_document)]
+        results += self.payments.match(statement_payments, recorded_payments, period_end=period_end)
+        allocations, unallocated = [], []
+        for source, docs, side_payments in (
+            ("STATEMENT", statement_docs, statement_payments),
+            ("ACCOUNTING", accounting_docs, recorded_payments),
+        ):
+            side_allocations, side_unallocated, overpaid = self.payments.allocate(
+                docs, side_payments, source
+            )
+            allocations += side_allocations
+            unallocated += side_unallocated
+            results += overpaid
+
         run = ReconciliationRun(
             results=results,
+            allocations=allocations,
+            unallocated_payments=unallocated,
             balance=BalanceCheckResult(
                 status=BalanceStatus.BALANCE_CHECK_NOT_POSSIBLE,
                 reason="Balance check has not been evaluated.",
@@ -154,8 +174,15 @@ class ReconciliationEngine:
             f"{describe(stmt)} matched to accounting {acct.display_reference} by "
             f"{method_text}. {assessment.reason}"
         )
+        status = assessment.status
+        if stmt.transaction_type == TransactionType.CREDIT_NOTE:
+            related = stmt.related_invoice_number or acct.related_invoice_number
+            if related:
+                reason += f" The credit relates to invoice {related}."
+            if status in (MatchStatus.MATCHED, MatchStatus.MATCHED_WITH_TOLERANCE):
+                status = MatchStatus.CREDIT_NOTE
         return MatchResult(
-            status=assessment.status,
+            status=status,
             kind=_KIND[stmt.transaction_type],
             statement_txn_id=stmt.transaction_id,
             accounting_txn_id=acct.transaction_id,
