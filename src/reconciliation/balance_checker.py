@@ -203,7 +203,10 @@ class BalanceChecker:
             acct = by_id.get(r.accounting_txn_id or "")
             if r.kind == ResultKind.PAYMENT:
                 # Payments reduce balances: statement-only lowers the supplier side.
-                value = -(stmt.amount if stmt else ZERO) + (acct.amount if acct else ZERO)
+                recorded = money_sum(
+                    by_id[i].amount for i in (r.accounting_txn_id, *r.related_txn_ids) if i in by_id
+                )
+                value = -(stmt.amount if stmt else ZERO) + recorded
                 category = CATEGORY_PAYMENTS
             else:
                 sign = _sign(r.kind)

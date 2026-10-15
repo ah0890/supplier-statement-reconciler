@@ -50,6 +50,7 @@ _AGEING = re.compile(
     re.IGNORECASE,
 )
 
+_WORDS = re.compile(r"[A-Za-z]{3,}")
 _MONEY_LIKE = re.compile(r"-?[\d,]+\.\d{2}")
 
 _CREDIT_TYPE = re.compile(
@@ -181,6 +182,15 @@ class TableTransformer:
             return None, False
         return value, True
 
+    @staticmethod
+    def _money_cells_contain_words(cells: _Cells) -> bool:
+        for field in (ColumnField.AMOUNT, ColumnField.DEBIT, ColumnField.CREDIT,
+                      ColumnField.PAYMENT_AMOUNT, ColumnField.BALANCE):  # fmt: skip
+            text = cells.get(field)
+            if text and _WORDS.search(text) and parse_amount(text) is None:
+                return True
+        return False
+
     def _row_text(self, row: list[str]) -> str:
         return " ".join(c for c in row if c and parse_amount(c) is None)
 
@@ -220,6 +230,13 @@ class TableTransformer:
             self._in_ageing_section = True
             return None
         if not txn_date and (self._in_ageing_section or _MONEY_LIKE.fullmatch(invoice_text)):
+            return None
+
+        # --- free-text lines (addresses, notes, remittance text) ----------------
+        if not txn_date and self._money_cells_contain_words(cells):
+            report.add(
+                IssueSeverity.INFO, f"{label}: text line without a date skipped.", row=row_number
+            )
             return None
 
         # --- amounts -----------------------------------------------------------

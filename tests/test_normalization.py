@@ -129,3 +129,23 @@ def test_single_supplier_mismatch_warns_but_keeps_rows():
     kept, _ = normalize_transactions([_txn("Acme Group")], NormalizationContext("Apex"), report)
     assert len(kept) == 1
     assert report.issues[0].severity == IssueSeverity.WARNING
+
+
+def test_accounting_rows_without_account_column_are_filtered_by_name(tmp_path):
+    from src.accounting import get_file_provider
+    from src.accounting.base import AccountingQuery
+
+    path = tmp_path / "bills.csv"
+    path.write_text(
+        "Supplier,Bill No,Date,Total\nAcme Ltd,A-1,01/09/2026,10\nOther plc,B-1,01/09/2026,20\n",
+        encoding="utf-8",
+    )
+    loaded = get_file_provider(path).load(
+        AccountingQuery(supplier_name="Acme", supplier_account="X1")
+    )
+    report = loaded.result.report
+    kept, excluded = normalize_transactions(
+        loaded.result.transactions, NormalizationContext("Acme", supplier_account="X1"), report
+    )
+    assert [t.invoice_number for t in kept] == ["A-1"]
+    assert excluded == 1

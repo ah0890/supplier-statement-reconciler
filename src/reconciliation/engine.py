@@ -132,7 +132,7 @@ class ReconciliationEngine:
             ("ACCOUNTING", accounting_docs, recorded_payments),
         ):
             side_allocations, side_unallocated, overpaid = self.payments.allocate(
-                docs, side_payments, source
+                docs, side_payments, source, report_unallocated=source == "ACCOUNTING"
             )
             allocations += side_allocations
             unallocated += side_unallocated

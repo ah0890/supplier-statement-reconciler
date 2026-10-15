@@ -168,3 +168,18 @@ def test_engine_includes_payments_and_allocations(stmt, acct):
     assert statuses == ["MATCHED", "MATCHED"]
     assert {a.source for a in run.allocations} == {"STATEMENT", "ACCOUNTING"}
     assert all(a.outstanding == Decimal("40.00") for a in run.allocations)
+
+
+def test_payment_run_split_across_allocations_matches_combined_total():
+    results = _reconciler().match(
+        [_payment(TransactionSource.STATEMENT, "PMT-77", "1500.00")],
+        [
+            _payment(TransactionSource.PAYMENTS, "PMT-77", "1000.00", related="INV-1"),
+            _payment(TransactionSource.PAYMENTS, "PMT-77", "500.00", related="INV-2"),
+        ],
+    )
+    assert len(results) == 1
+    assert results[0].status == MatchStatus.MATCHED
+    assert results[0].accounting_amount == Decimal("1500.00")
+    assert len(results[0].related_txn_ids) == 1
+    assert "2 recorded payment allocations" in results[0].matching_reason

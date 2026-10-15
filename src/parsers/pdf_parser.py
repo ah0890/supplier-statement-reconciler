@@ -128,9 +128,17 @@ def layout_grid(
         if not words:
             continue
         gap = _gap_threshold(words)
-        for line_number, line in enumerate(group_lines(words), start=1):
-            phrases = split_phrases(line, gap)
-            texts = [_phrase_text(p) for p in phrases]
+        lines = group_lines(words)
+        split = [split_phrases(line, gap) for line in lines]
+        texts_per_line = [[_phrase_text(p) for p in phrases] for phrases in split]
+        header_lines = [i for i, t in enumerate(texts_per_line) if header_row_score(t) >= 3]
+        # Letterheads above a repeated header are not transactions.
+        first_line = header_lines[0] if header_lines else 0
+        for line_number, (phrases, texts) in enumerate(
+            zip(split, texts_per_line, strict=True), start=1
+        ):
+            if line_number - 1 < first_line:
+                continue
             if header_row_score(texts) >= 3:
                 raw_columns = [
                     _Column(t, p[0].x0, p[-1].x1) for t, p in zip(texts, phrases, strict=True)

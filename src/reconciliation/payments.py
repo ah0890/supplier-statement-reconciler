@@ -28,7 +28,7 @@ from src.models.reconciliation import (
 from src.models.transaction import CanonicalTransaction, TransactionType
 from src.reconciliation.confidence import ConfidenceScorer
 from src.utils.dates import days_between, format_date
-from src.utils.money import ZERO, format_money
+from src.utils.money import ZERO, format_money, money_sum
 from src.utils.normalization import normalize_invoice_number
 
 
@@ -69,6 +69,17 @@ class PaymentReconciler:
                 remaining.append(stmt)
                 continue
             best = min(candidates, key=lambda c: abs(stmt.amount - c.amount))
+            combined = money_sum(c.amount for c in candidates)
+            tolerance = self.config.amount_tolerance
+            if (
+                len(candidates) > 1
+                and abs(stmt.amount - best.amount) > tolerance
+                and abs(stmt.amount - combined) <= tolerance
+            ):
+                # A payment run recorded as one row per allocated invoice.
+                used.update(c.transaction_id for c in candidates)
+                results.append(self._pair_group(stmt, candidates, combined))
+                continue
             used.add(best.transaction_id)
             results.append(self._pair(stmt, best, MatchMethod.PAYMENT_REFERENCE))
 
@@ -150,6 +161,36 @@ class PaymentReconciler:
             ),
         )
 
+    def _pair_group(
+        self,
+        stmt: CanonicalTransaction,
+        rows: Sequence[CanonicalTransaction],
+        combined: Decimal,
+    ) -> MatchResult:
+        days = days_between(stmt.invoice_date, rows[0].invoice_date)
+        difference = stmt.amount - combined
+        return MatchResult(
+            status=MatchStatus.MATCHED if difference == 0 else MatchStatus.MATCHED_WITH_TOLERANCE,
+            kind=ResultKind.PAYMENT,
+            statement_txn_id=stmt.transaction_id,
+            accounting_txn_id=rows[0].transaction_id,
+            related_txn_ids=[r.transaction_id for r in rows[1:]],
+            statement_amount=stmt.amount,
+            accounting_amount=combined,
+            amount_difference=difference,
+            days_difference=days,
+            confidence_score=self.scorer.score(
+                MatchMethod.PAYMENT_REFERENCE, amount_diff=difference, days_diff=days
+            ),
+            confidence_band=self.scorer.band(100),
+            matching_method=MatchMethod.PAYMENT_REFERENCE,
+            matching_reason=(
+                f"Payment {stmt.display_reference} of {format_money(stmt.amount)} matched to "
+                f"{len(rows)} recorded payment allocations with the same reference "
+                f"(total {format_money(combined)})."
+            ),
+        )
+
     def _pair(
         self, stmt: CanonicalTransaction, rec: CanonicalTransaction, method: MatchMethod
     ) -> MatchResult:
@@ -201,8 +242,14 @@ class PaymentReconciler:
         documents: Sequence[CanonicalTransaction],
         payments: Sequence[CanonicalTransaction],
         source: str,
+        *,
+        report_unallocated: bool = True,
     ) -> tuple[list[PaymentAllocation], list[str], list[MatchResult]]:
-        """Return (allocations, unallocated payment descriptions, overpayment results)."""
+        """Return (allocations, unallocated payment descriptions, overpayment results).
+
+        Supplier statements rarely show allocations, so callers can switch off the
+        unallocated list for the statement side.
+        """
         invoices = {
             t.invoice_number_normalized: t
             for t in documents
@@ -216,6 +263,8 @@ class PaymentReconciler:
             target = normalize_invoice_number(payment.related_invoice_number)
             if target and target in invoices:
                 paid[target] += payment.amount
+            elif not report_unallocated:
+                continue
             elif target:
                 unallocated.append(
                     f"{source}: payment {payment.display_reference} "

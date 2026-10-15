@@ -124,8 +124,8 @@ class FileAccountingProvider(AccountingProvider):
             source=TransactionSource.PAYMENTS if is_payments else TransactionSource.ACCOUNTING,
             source_file=self.path.name,
             expected_currency=query.currency,
-            default_supplier=query.supplier_name,
-            default_supplier_account=query.supplier_account,
+            # No supplier defaults: rows without a supplier column are attributed during
+            # normalisation, and an injected account number would defeat supplier filtering.
             credit_default=TransactionType.CREDIT_NOTE,
             force_type=TransactionType.PAYMENT if is_payments else None,
             invoice_column_is_allocation=is_payments,
