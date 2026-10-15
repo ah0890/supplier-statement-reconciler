@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+from collections import Counter
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -40,19 +41,34 @@ def _decode(data: bytes) -> str:
     raise FileReadError("The file's text encoding could not be recognised.")
 
 
+def detect_delimiter(text: str, candidates: str = ",;\t|") -> str:
+    """Pick the delimiter that splits the most lines into the same number of columns.
+
+    More robust than ``csv.Sniffer`` for statements, where letterhead lines differ
+    from the table and European amounts (``1.234,56``) contain commas.
+    """
+    lines = [line for line in text.splitlines()[:200] if line.strip()]
+    best, best_score = ",", 0
+    for delimiter in candidates:
+        counts = Counter(
+            len(row) for row in csv.reader(io.StringIO("\n".join(lines)), delimiter=delimiter)
+        )
+        columns, rows = max(
+            ((c, n) for c, n in counts.items() if c > 1), key=lambda item: item[1], default=(1, 0)
+        )
+        score = rows * min(columns, 12)
+        if score > best_score:
+            best, best_score = delimiter, score
+    return best
+
+
 def read_csv_grid(path: Path) -> list[list[str]]:
     """Read a CSV file with automatic encoding and delimiter detection."""
     data = path.read_bytes()
     if not data.strip():
         raise FileReadError("The file is empty.")
     text = _decode(data)
-    sample = text[:20_000]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-        delimiter = dialect.delimiter
-    except csv.Error:
-        delimiter = ","
-    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    reader = csv.reader(io.StringIO(text), delimiter=detect_delimiter(text))
     grid = []
     for index, row in enumerate(reader):
         if index >= _MAX_ROWS:

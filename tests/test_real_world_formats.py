@@ -13,6 +13,7 @@ import sys
 from datetime import date
 from decimal import Decimal
 
+from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
@@ -21,6 +22,7 @@ from src.accounting.base import AccountingQuery
 from src.config import PROJECT_ROOT
 from src.models.transaction import TransactionType
 from src.models.validation import ValidationReport
+from src.parsers.columns import ColumnField
 from src.parsers.csv_parser import CSVStatementParser
 from src.parsers.pdf_parser import PDFStatementParser
 from src.services.normalization_service import NormalizationContext, normalize_transactions
@@ -165,3 +167,119 @@ def test_due_dates_help_disambiguate_invoice_dates(tmp_path):
     loaded = get_file_provider(path).load(AccountingQuery(currency="GBP"))
     assert loaded.result.transactions[0].invoice_date == date(2026, 4, 3)
     assert loaded.result.report.warnings == 0
+
+
+# --- Layout patterns found during real-document testing (synthetic values) ---------
+
+PAGE_CARRY_FORWARD = """Date,Ref,Details,Debit,Credit,Balance
+01/09/2026,,Balance brought forward,,,1000.00
+02/09/2026,X-1,Item,100.00,,1100.00
+,,Carried forward,,,1100.00
+,,Brought forward,,,1100.00
+03/09/2026,X-2,Item,50.00,,1150.00
+,,Amount now due,,,1150.00
+"""
+
+GERMAN_STATEMENT = (
+    "Muster Lieferant GmbH;;;;;\n"
+    "Kontoauszug;;;;;\n"
+    "Belegdatum;Belegnummer;Buchungstext;Soll;Haben;Saldo\n"
+    "01.09.2026;;Saldovortrag;;;1.000,00\n"
+    "02.09.2026;RE-1;Ware;2.500,50;;3.500,50\n"
+    "05.09.2026;ZA-9;Zahlungseingang;;1.000,00;2.500,50\n"
+    "05.09.2026;ZA-9;Skonto 2 %;;20,00;2.480,50\n"
+    "09.09.2026;GS-3;Gutschrift zu RE-1;;80,50;2.400,00\n"
+    ";;Endsaldo;;;2.400,00\n"
+)
+
+TYPE_AND_NUMBER_COLUMNS = """Date,Document,Doc No.,Debit,Credit,Balance
+2026-09-01,B/FWD,,,,100.00
+2026-09-02,INV,AB-1,10.00,,110.00
+2026-09-03,INV,AB-2,20.00,,130.00
+2026-09-04,PAY,PAY 1,,100.00,30.00
+2026-09-05,INV,AB-3,5.00,,35.00
+"""
+
+
+def _parse(tmp_path, name, text, encoding="utf-8"):
+    path = tmp_path / name
+    path.write_text(text, encoding=encoding)
+    return CSVStatementParser().parse(path)
+
+
+def test_page_brought_forward_lines_do_not_replace_opening_balance(tmp_path):
+    parsed = _parse(tmp_path, "pages.csv", PAGE_CARRY_FORWARD)
+    assert parsed.result.balances.opening_balance == Decimal("1000.00")
+    assert parsed.result.balances.closing_balance == Decimal("1150.00")
+    assert len(parsed.result.transactions) == 2
+
+
+def test_german_semicolon_statement(tmp_path):
+    parsed = _parse(tmp_path, "kontoauszug.csv", GERMAN_STATEMENT, encoding="cp1252")
+    txns = parsed.result.transactions
+    assert [(t.transaction_type, t.amount) for t in txns] == [
+        (TransactionType.INVOICE, Decimal("2500.50")),
+        (TransactionType.PAYMENT, Decimal("1000.00")),
+        (TransactionType.CREDIT_NOTE, Decimal("20.00")),  # settlement discount
+        (TransactionType.CREDIT_NOTE, Decimal("80.50")),
+    ]
+    assert parsed.result.balances.opening_balance == Decimal("1000.00")
+    assert parsed.result.balances.closing_balance == Decimal("2400.00")
+
+
+def test_type_column_is_not_taken_as_invoice_number(tmp_path):
+    parsed = _parse(tmp_path, "types.csv", TYPE_AND_NUMBER_COLUMNS)
+    assert parsed.mapping.column_for(ColumnField.INVOICE_NUMBER) == "Doc No."
+    assert parsed.mapping.column_for(ColumnField.TRANSACTION_TYPE) == "Document"
+    assert parsed.result.balances.opening_balance == Decimal("100.00")
+    assert [t.display_reference for t in parsed.result.transactions] == [
+        "AB-1", "AB-2", "PAY 1", "AB-3",
+    ]  # fmt: skip
+
+
+def test_gross_amount_column_chosen_by_running_balance(tmp_path):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Date", "Invoice No", "Amount", "VAT", "Amount", "Balance"])
+    sheet.append(["2026-09-01", "Balance b/f", None, None, None, 100])
+    sheet.append(["2026-09-02", "Q-1", 100, 20, 120, 220])
+    sheet.append(["2026-09-03", "Q-2", 50, 10, 60, 280])
+    sheet.append(["46268", "Q-3", 10, 2, 12, 292])  # Excel serial date stored as text
+    sheet.append(["2026-09-05", "Q-4", -10, -2, -12, 280])
+    path = tmp_path / "dup.xlsx"
+    workbook.save(path)
+    from src.parsers.excel_parser import ExcelStatementParser
+
+    parsed = ExcelStatementParser().parse(path)
+    txns = parsed.result.transactions
+    assert parsed.mapping.column_for(ColumnField.AMOUNT) == "Amount (2)"
+    assert [t.amount for t in txns] == [Decimal("120.00"), Decimal("60.00"), Decimal("12.00"),
+                                        Decimal("12.00")]  # fmt: skip
+    assert txns[2].invoice_date == date(2026, 9, 3)
+    assert txns[3].transaction_type == TransactionType.CREDIT_NOTE  # negative on a document
+    assert parsed.result.balances.opening_balance == Decimal("100.00")
+
+
+def test_credit_and_adjustment_descriptions_and_bfwd_without_slash(tmp_path):
+    parsed = _parse(
+        tmp_path,
+        "misc.csv",
+        "Doc Date,Doc Type,Doc No,Details,Invoice Amt,Paid/Credited,Running Bal\n"
+        "01/09/2026,BFWD,,,,,500.00\n"
+        "02/09/2026,,X-10,Linen,100.00,,600.00\n"
+        "03/09/2026,,X-C1,Credit - stained items,,10.00,590.00\n"
+        "04/09/2026,,ADJ-7,Short delivery adj,,5.00,585.00\n"
+        "05/09/2026,,,Payment rec'd - with thanks,,500.00,85.00\n",
+    )
+    types = [t.transaction_type for t in parsed.result.transactions]
+    assert types == [TransactionType.INVOICE, TransactionType.CREDIT_NOTE,
+                     TransactionType.CREDIT_NOTE, TransactionType.PAYMENT]  # fmt: skip
+    assert parsed.result.balances.opening_balance == Decimal("500.00")
+
+
+def test_document_line_without_amount_is_an_error(tmp_path):
+    parsed = _parse(
+        tmp_path, "noamt.csv", "Date,Invoice No,Amount\n01/09/2026,INV-5,TBC\n02/09/2026,INV-6,\n"
+    )
+    row_errors = [i for i in parsed.result.report.issues if i.severity.value == "ERROR" and i.row]
+    assert len(row_errors) == 2

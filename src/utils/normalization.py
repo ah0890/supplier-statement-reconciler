@@ -14,6 +14,7 @@ date evidence and a lower confidence score.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from rapidfuzz import fuzz
 
@@ -31,6 +32,7 @@ _LEGAL_SUFFIXES = (
     "PVT", "PRIVATE", "PTE", "SRL", "SPA", "AB", "AS", "OY", "KG",
 )  # fmt: skip
 _SUPPLIER_PUNCT = re.compile(r"[^\w\s]")
+_TRANSLITERATIONS = {"Ä": "AE", "Ö": "OE", "Ü": "UE", "ß": "SS", "ẞ": "SS"}
 
 
 def normalize_invoice_number(value: str | None) -> str | None:
@@ -62,6 +64,9 @@ def normalize_supplier_name(value: str | None) -> str | None:
     if value is None:
         return None
     text = str(value).upper().replace("&", " AND ")
+    for umlaut, spelled in _TRANSLITERATIONS.items():  # KÜCHENTECHNIK == KUECHENTECHNIK
+        text = text.replace(umlaut, spelled)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     text = re.sub(r"\bT/A\b.*$", "", text)  # "trading as ..." suffix
     text = _SUPPLIER_PUNCT.sub(" ", text)
     words = text.split()

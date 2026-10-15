@@ -121,6 +121,9 @@ class ReconciliationEngine:
                 results.append(self.duplicate_result(duplicate))
             else:
                 results.append(self.accounting_only_result(txn, period_end))
+        self._flag_currency_differences(
+            results, matching.unmatched_statement, matching.unmatched_accounting
+        )
 
         # 4. Payments and allocation.
         statement_payments = [t for t in statement if not t.is_document]
@@ -209,6 +212,36 @@ class ReconciliationEngine:
             days_difference=pair.days_difference,
             **self._base(pair.method, pair.confidence),
         )
+
+    @staticmethod
+    def _flag_currency_differences(
+        results: list[MatchResult],
+        unmatched_statement: Sequence[CanonicalTransaction],
+        unmatched_accounting: Sequence[CanonicalTransaction],
+    ) -> None:
+        """Explain unmatched items whose reference exists on the other side in another
+        currency. Amounts in different currencies are never compared automatically."""
+        by_ref: dict[str, list[CanonicalTransaction]] = {}
+        for txn in unmatched_accounting:
+            if txn.invoice_number_normalized:
+                by_ref.setdefault(txn.invoice_number_normalized, []).append(txn)
+        by_id = {r.statement_txn_id or r.accounting_txn_id: r for r in results}
+        for stmt in unmatched_statement:
+            for acct in by_ref.get(stmt.invoice_number_normalized or "", []):
+                if not (stmt.currency and acct.currency and stmt.currency != acct.currency):
+                    continue
+                for own, other in ((stmt, acct), (acct, stmt)):
+                    result = by_id.get(own.transaction_id)
+                    if result is None or "CURRENCY" in result.issues:
+                        continue
+                    result.issues.append("CURRENCY")
+                    result.requires_review = True
+                    result.review_status = ReviewStatus.PENDING
+                    result.matching_reason += (
+                        f" A document with the same reference exists on the other side in "
+                        f"{other.currency} ({format_money(other.amount)}); amounts in different "
+                        "currencies are not compared automatically - check the currency."
+                    )
 
     def duplicate_result(self, finding: DuplicateFinding) -> MatchResult:
         txn = finding.duplicate

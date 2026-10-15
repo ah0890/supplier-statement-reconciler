@@ -212,3 +212,16 @@ def test_matching_5000_records_is_fast():
     assert elapsed < 10, f"took {elapsed:.1f}s"
     paired = sum(bool(r.statement_txn_id and r.accounting_txn_id) for r in run.results)
     assert paired == 5000
+
+
+def test_same_reference_in_different_currency_is_explained_not_matched(stmt, acct):
+    run = ReconciliationEngine().run(
+        [stmt("RE-0718", "1234.56", D, currency="EUR")],
+        [acct("RE-0718", "1071.35", D, currency="GBP")],
+    )
+    statuses = sorted(r.status.value for r in run.results)
+    assert statuses == ["MISSING_IN_ACCOUNTING", "NOT_ON_SUPPLIER_STATEMENT"]
+    for result in run.results:
+        assert "CURRENCY" in result.issues
+        assert result.requires_review
+    assert "in GBP (1,071.35)" in run.results[0].matching_reason

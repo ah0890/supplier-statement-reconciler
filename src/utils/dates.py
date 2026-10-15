@@ -50,6 +50,8 @@ def parse_date(value: object, *, dayfirst: bool | None = True) -> date | None:
     text = " ".join(str(value).split())
     if not text:
         return None
+    if re.fullmatch(r"\d{5}(\.0+)?", text):  # Excel serial stored as text, e.g. "46280"
+        return excel_serial_to_date(float(text))
     text = _TIME_SUFFIX.sub("", text)
     text = _ORDINAL.sub(r"\1", text).replace("Sept", "Sep").replace("sept", "sep")
 

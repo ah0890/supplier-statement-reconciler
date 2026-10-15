@@ -30,13 +30,15 @@ from src.utils.dates import MONTH_FIRST_CURRENCIES, is_ambiguous_numeric_date, p
 from src.utils.money import ZERO, parse_amount
 
 _OPENING = re.compile(
-    r"\b(opening balance|balance b ?/ ?f(wd)?|brought forward|b ?/ ?fwd|balance forward|"
-    r"previous balance|opening)\b",
+    r"\b(opening balance|balance b ?/ ?f(wd)?|brought forward|b ?/? ?fwd|b ?/ ?f|"
+    r"balance forward|previous balance|opening|saldovortrag|vortrag|anfangssaldo|"
+    r"solde (initial|report[eé]|pr[eé]c[eé]dent|ant[eé]rieur))\b",
     re.IGNORECASE,
 )
 _CLOSING = re.compile(
     r"\b(closing balance|balance c ?/ ?f(wd)?|carried forward|c ?/ ?fwd|total due|amount due|"
-    r"balance due|total outstanding|amount now due|closing|balance outstanding)\b",
+    r"balance due|total outstanding|amount now due|closing|balance outstanding|endsaldo|"
+    r"schlusssaldo|zu ihren lasten|solde (final|d[uû]|[aà] payer))\b",
     re.IGNORECASE,
 )
 _TOTAL = re.compile(
@@ -46,7 +48,7 @@ _TOTAL = re.compile(
 )
 _AGEING = re.compile(
     r"\b(current|30 days|60 days|90 days|over 90|90\+|120\+|1-30|31-60|61-90|ageing|aging|"
-    r"days overdue)\b",
+    r"days overdue|[1-3]\+? months?)\b",
     re.IGNORECASE,
 )
 
@@ -68,14 +70,23 @@ _INVOICE_TYPE = re.compile(
     r"sales|pi)\b",
     re.IGNORECASE,
 )
-_CREDIT_DESC = re.compile(r"\b(credit ?note|credit memo|crn|refund)\b", re.IGNORECASE)
-_PAYMENT_DESC = re.compile(
-    r"\b(payment|paid|remittance|bacs|cheque|chq|receipt|direct debit|faster payment|"
-    r"bank transfer|chaps)\b",
+_CREDIT_DESC = re.compile(
+    r"(\b(credit ?note|credit memo|crn|refund|returned|gutschrift|avoir)\b|^\s*credit\b)",
     re.IGNORECASE,
 )
-_CREDIT_REF = re.compile(r"^(CN|CRN|CR|CM|CRED)[\s\-/#.]*\d", re.IGNORECASE)
-_PAYMENT_REF = re.compile(r"^(PMT|PAY|BACS|CHQ|RCPT|REM|DD|FP)[\s\-/#.]*\d", re.IGNORECASE)
+_PAYMENT_DESC = re.compile(
+    r"\b(payment|paid|remittance|bacs|cheque|chq|receipt|direct debit|faster payment|"
+    r"bank transfer|chaps|zahlung\w*|paiement|r[eè]glement|betaling)\b",
+    re.IGNORECASE,
+)
+# Credit-side adjustments and settlement discounts reduce the balance like a credit note.
+_ADJUSTMENT_DESC = re.compile(
+    r"\b(adj|adjustment|allowance|discount|rebate|skonto|rabatt|escompte|remise)\b",
+    re.IGNORECASE,
+)
+_CREDIT_REF = re.compile(r"^(CN|CRN|CR|CM|CRED|GS|ADJ)[\s\-/#.]*\d", re.IGNORECASE)
+_PAYMENT_REF = re.compile(r"^(PMT|PAY|BACS|CHQ|RCPT|REM|DD|FP|ZA)[\s\-/#.]*\d", re.IGNORECASE)
+_HAS_DIGIT = re.compile(r"\d")
 
 
 @dataclass
@@ -126,6 +137,7 @@ class TableTransformer:
         }
         header_signature = {normalize_header(h) for h in table.headers if h}
         self._in_ageing_section = False
+        self._seen_transactions = False
         self._current_group: str | None = None
         self._dayfirst = self.mapping.dayfirst
         if self._dayfirst is None:
@@ -164,6 +176,7 @@ class TableTransformer:
                 report.skipped += 1
             else:
                 transactions.append(outcome)
+                self._seen_transactions = True
 
         if self.mapping.dayfirst is None and self._ambiguous_dates and transactions:
             order = "DD/MM/YYYY" if self._dayfirst else "MM/DD/YYYY"
@@ -271,10 +284,14 @@ class TableTransformer:
         reference_text = cells.get(ColumnField.REFERENCE)
 
         # --- balance, total and summary rows ---------------------------------
-        if opts.detect_balances and not invoice_text:
+        # Balance lines never carry a document number ("Balance b/f" may sit in that column).
+        if opts.detect_balances and not _HAS_DIGIT.search(invoice_text):
             if _OPENING.search(row_text):
-                balances.opening_balance = self._balance_value(cells, row)
-                balances.opening_source = "detected"
+                # Only the first brought-forward line is the opening balance; later ones
+                # are page carry-forwards on multi-page statements.
+                if balances.opening_balance is None and not self._seen_transactions:
+                    balances.opening_balance = self._balance_value(cells, row)
+                    balances.opening_source = "detected"
                 return None
             if _CLOSING.search(row_text):
                 balances.closing_balance = self._balance_value(cells, row)
@@ -314,7 +331,15 @@ class TableTransformer:
 
         amount, side = self._amount_and_side(values)
         if amount is None:
-            if txn_date or invoice_text:
+            if _HAS_DIGIT.search(invoice_text) and txn_date:
+                # A dated document line without an amount is a data problem, not noise.
+                report.add(
+                    IssueSeverity.ERROR,
+                    f"{label}: document {invoice_text} has no amount - row excluded.",
+                    row=row_number,
+                    field="amount",
+                )
+            elif txn_date or invoice_text:
                 report.add(
                     IssueSeverity.WARNING,
                     f"{label}: no amount found - row skipped.",
@@ -455,7 +480,11 @@ class TableTransformer:
                 explicit = TransactionType.INVOICE
 
         if explicit is None:
-            if _CREDIT_REF.match(reference) or _CREDIT_DESC.search(description):
+            if (
+                (side in ("credit", "negative") and _ADJUSTMENT_DESC.search(description))
+                or _CREDIT_REF.match(reference)
+                or _CREDIT_DESC.search(description)
+            ):
                 explicit = TransactionType.CREDIT_NOTE
             elif _PAYMENT_REF.match(reference) or _PAYMENT_DESC.search(description):
                 explicit = TransactionType.PAYMENT
@@ -472,7 +501,10 @@ class TableTransformer:
 
         if side == "debit":
             return TransactionType.INVOICE, None
-        if side == "negative" and opts.source != TransactionSource.STATEMENT:
+        if side == "negative" and (
+            opts.source != TransactionSource.STATEMENT or _HAS_DIGIT.search(reference)
+        ):
+            # A negative amount against a document number is a credit, not a payment.
             return TransactionType.CREDIT_NOTE, None
         return (
             opts.credit_default,

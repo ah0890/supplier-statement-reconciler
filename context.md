@@ -16,6 +16,18 @@ differences, with a review workflow and Excel, CSV and PDF reports.
 
 ## Current phase: real-world document testing
 
+**Status (2026-10-16):** the owner supplied 42 test files in `client_data/` (14 statements,
+10 accounting exports, 8 payment exports and 10 deliberately bad files). They are realistic
+*fictional* test documents (the PDF footer says so), not genuine client statements. All
+supplier statements now parse completely, every bad file is rejected with a clear message,
+and all nine supplier reconciliations explain their balance difference with 0.00
+unexplained. Fixes made, each covered by synthetic tests in
+`tests/test_real_world_formats.py`: page carry-forward balances, content-aware column
+choice (type vs number columns, gross vs net "Amount"), German/French vocabulary,
+consistent-column CSV delimiter detection, umlaut transliteration in supplier names,
+credit/adjustment/discount classification, Excel serial dates stored as text,
+cross-currency reference warnings, and an error for document lines with no amount.
+
 The application is complete and works on synthetic data. **The next work uses real
 supplier statements only. Do not use the demo data** (`sample_data/`, the
 "Load demo reconciliation" button or `scripts/generate_demo_data.py`) for this phase.

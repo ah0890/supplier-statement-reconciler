@@ -196,7 +196,8 @@ def test_csv_semicolon_european_format(tmp_path):
     parsed = parser.parse(path, mapping=mapping, table=table)
     amounts = [t.amount for t in parsed.result.transactions]
     assert amounts == [Decimal("1234.56"), Decimal("99.00")]
-    assert parsed.result.transactions[1].transaction_type == TransactionType.PAYMENT
+    # A negative amount against a document number is a credit, not a payment.
+    assert parsed.result.transactions[1].transaction_type == TransactionType.CREDIT_NOTE
 
 
 def test_csv_signed_amount_column_and_cr_suffix(tmp_path):

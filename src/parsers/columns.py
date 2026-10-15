@@ -8,7 +8,9 @@ values are not dates gets a low confidence so that the UI asks the user.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Sequence
+from decimal import Decimal
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -142,6 +144,36 @@ SYNONYMS: dict[ColumnField, tuple[str, ...]] = {
     ColumnField.STATUS: ("status", "invoice status", "bill status"),
 }  # fmt: skip
 
+# Common abbreviations and non-English (German, French, Dutch, Spanish) statement headers.
+# Headers are compared after accents are removed ("Währung" -> "wahrung").
+_ADDITIONAL_SYNONYMS: dict[ColumnField, tuple[str, ...]] = {
+    ColumnField.INVOICE_NUMBER: (
+        "belegnummer", "belegnr", "beleg nr", "rechnungsnummer", "rechnungsnr", "rechnung nr",
+        "numero de facture", "no facture", "n facture", "facture", "factuurnummer",
+        "numero factura",
+    ),
+    ColumnField.DATE: (
+        "belegdatum", "datum", "buchungsdatum", "rechnungsdatum", "date de facture",
+        "date piece", "factuurdatum", "fecha", "txn date",
+    ),
+    ColumnField.DUE_DATE: ("falligkeit", "falligkeitsdatum", "echeance", "date d echeance",
+                           "vervaldatum"),
+    ColumnField.DESCRIPTION: ("buchungstext", "text", "beschreibung", "libelle", "designation",
+                              "omschrijving", "concepto"),
+    ColumnField.TRANSACTION_TYPE: ("belegart", "buchungsart", "type de piece"),
+    ColumnField.DEBIT: ("soll", "debe"),
+    ColumnField.CREDIT: ("haben", "haber", "paid credited", "paid or credited"),
+    ColumnField.AMOUNT: ("betrag", "montant", "bedrag", "importe", "invoice amt", "inv amt",
+                         "amt", "gross amt"),
+    ColumnField.BALANCE: ("saldo", "solde", "running bal", "balance due to date"),
+    ColumnField.CURRENCY: ("wahrung", "devise", "valuta", "moneda"),
+    ColumnField.TAX: ("mwst", "ust", "tva", "btw", "iva"),
+    ColumnField.REFERENCE: ("referenz", "referentie"),
+    ColumnField.SUPPLIER_NAME: ("lieferant", "fournisseur", "leverancier", "proveedor"),
+}  # fmt: skip
+for _field, _extra in _ADDITIONAL_SYNONYMS.items():
+    SYNONYMS[_field] = SYNONYMS[_field] + _extra
+
 _HEADER_CLEAN = re.compile(r"[^a-z0-9]+")
 _EXACT_INDEX: dict[str, ColumnField] = {}
 for _field, _names in SYNONYMS.items():
@@ -151,7 +183,8 @@ for _field, _names in SYNONYMS.items():
 
 def normalize_header(header: object) -> str:
     """'Invoice No.' -> 'invoice no'; '#' becomes 'no'."""
-    text = str(header or "").lower().replace("#", " no ").replace("&", " and ")
+    text = unicodedata.normalize("NFKD", str(header or "")).encode("ascii", "ignore").decode()
+    text = text.lower().replace("#", " no ").replace("&", " and ")
     return " ".join(_HEADER_CLEAN.sub(" ", text).split())
 
 
@@ -196,6 +229,15 @@ class ColumnMapping(BaseModel):
         return [f for f, c in self.confidence.items() if f in self.fields and c < threshold]
 
 
+# Values typical of a document-type column (INV / PAY / CN / B/FWD ...), not of references.
+_TYPE_VALUE = re.compile(
+    r"^(inv|invoice|bill|pay|payment|pmt|rcpt|receipt|cr|crn|cn|c/n|credit|credit note|dr|"
+    r"adj|adjustment|b ?/ ?fwd|b ?/ ?f|pi|pc|pp|pa|si|sc|re|gs|za|accpay|accpaycredit|"
+    r"vendor credit|bill payment|rechnung|gutschrift|zahlung)$",
+    re.IGNORECASE,
+)
+
+
 def _content_check(field: ColumnField, values: Sequence[str]) -> tuple[float, str | None]:
     sample = [v for v in values if v and v.strip()][:200]
     if not sample:
@@ -206,40 +248,119 @@ def _content_check(field: ColumnField, values: Sequence[str]) -> tuple[float, st
     if field in MONEY_FIELDS:
         ratio = sum(parse_amount(v) is not None for v in sample) / len(sample)
         return ratio, None if ratio >= 0.6 else "values do not look like amounts"
+    if field in (ColumnField.INVOICE_NUMBER, ColumnField.REFERENCE) and len(sample) >= 4:
+        distinct = len({v.strip().upper() for v in sample}) / len(sample)
+        typeish = sum(bool(_TYPE_VALUE.match(v.strip())) for v in sample) / len(sample)
+        if typeish >= 0.6 or distinct < 0.3:
+            return distinct, "values repeat like document types rather than references"
     return 1.0, None
 
 
-def detect_mapping(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> ColumnMapping:
-    """Detect a column mapping from headers and (sample) rows."""
-    candidates: list[tuple[int, int, ColumnField]] = []
+def _looks_like_type_column(values: Sequence[str]) -> bool:
+    sample = [v.strip() for v in values if v and v.strip()][:200]
+    return len(sample) >= 3 and sum(bool(_TYPE_VALUE.match(v)) for v in sample) / len(sample) >= 0.6
+
+
+def _candidates(headers: Sequence[str], rows: Sequence[Sequence[str]]):
+    """All plausible (confidence, header score, column index, field, note) assignments."""
+    found = []
     for index, header in enumerate(headers):
+        own_name = normalize_header(header)
+        values = [  # repeated header rows (multi-page files) are not content
+            v for row in rows
+            if (v := row[index] if index < len(row) else "") and normalize_header(v) != own_name
+        ]  # fmt: skip
+        fields: dict[ColumnField, int] = {}
         field, score = score_header(header)
         if field is not None and score >= 70:
-            candidates.append((score, index, field))
-        # Secondary candidates: allow a header to serve another field it matches exactly
+            fields[field] = score
         norm = normalize_header(header)
-        for other, names in SYNONYMS.items():
-            if other != field and norm in names:
-                candidates.append((90, index, other))
+        for other, names in SYNONYMS.items():  # a header may serve another field exactly
+            if other not in fields and norm in names:
+                fields[other] = 90
+        if _looks_like_type_column(values):
+            fields[ColumnField.TRANSACTION_TYPE] = max(
+                fields.get(ColumnField.TRANSACTION_TYPE, 0), 92
+            )
+        for candidate, header_score in fields.items():
+            ratio, problem = _content_check(candidate, values)
+            confidence = header_score
+            if problem:
+                confidence = max(10, header_score - 45)
+            elif ratio < 0.9 and (candidate in DATE_FIELDS or candidate in MONEY_FIELDS):
+                confidence = max(10, header_score - 15)
+            found.append((confidence, header_score, index, candidate, problem))
+    return found
 
+
+def _balance_agreement(
+    headers: Sequence[str], rows: Sequence[Sequence[str]], amount_col: str, balance_col: str
+) -> float:
+    """Share of rows where the change in running balance equals the amount column."""
+    balances = [parse_amount(v) for v in _column_values(headers, rows, balance_col)]
+    amounts = [parse_amount(v) for v in _column_values(headers, rows, amount_col)]
+    hits = tries = 0
+    previous = None
+    for balance, amount in zip(balances, amounts, strict=True):
+        if balance is not None and previous is not None and amount is not None:
+            tries += 1
+            hits += abs(abs(balance - previous) - abs(amount)) <= Decimal("0.01")
+        if balance is not None:
+            previous = balance
+    return hits / tries if tries else 0.0
+
+
+def _prefer_balance_consistent_amount(
+    headers: Sequence[str], rows: Sequence[Sequence[str]], mapping: ColumnMapping
+) -> None:
+    """When several columns could be 'the amount' (e.g. net and gross both called
+    'Amount'), choose the one whose values move the running balance."""
+    amount_col = mapping.column_for(ColumnField.AMOUNT)
+    balance_col = mapping.column_for(ColumnField.BALANCE)
+    if not amount_col or not balance_col:
+        return
+    mapped = set(mapping.fields.values())
+    options = [
+        h for h in headers
+        if h == amount_col
+        or (h not in mapped and score_header(h)[0] in (ColumnField.AMOUNT, ColumnField.SUBTOTAL))
+    ]  # fmt: skip
+    if len(options) < 2:
+        return
+    scores = {h: _balance_agreement(headers, rows, h, balance_col) for h in options}
+    best = max(options, key=lambda h: scores[h])
+    if best != amount_col and scores[best] >= 0.6 and scores[best] > scores[amount_col] + 0.2:
+        mapping.fields[ColumnField.AMOUNT.value] = best
+        mapping.confidence[ColumnField.AMOUNT.value] = 85
+        mapping.notes[ColumnField.AMOUNT.value] = (
+            f"'{best}' chosen because it agrees with the running balance"
+        )
+        if not mapping.has(ColumnField.SUBTOTAL):
+            mapping.fields[ColumnField.SUBTOTAL.value] = amount_col
+            mapping.confidence[ColumnField.SUBTOTAL.value] = 70
+
+
+def detect_mapping(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> ColumnMapping:
+    """Detect a column mapping from headers and (sample) rows.
+
+    Header evidence is combined with content checks *before* columns are assigned,
+    so a column whose content contradicts its name loses to a better candidate.
+    """
     mapping = ColumnMapping()
     used_columns: set[int] = set()
-    for score, index, field in sorted(candidates, key=lambda c: (-c[0], c[1])):
+    for confidence, _, index, field, problem in sorted(
+        _candidates(headers, rows), key=lambda c: (-c[0], -c[1], c[2])
+    ):
         if field.value in mapping.fields or index in used_columns:
             continue
-        values = [row[index] if index < len(row) else "" for row in rows]
-        ratio, problem = _content_check(field, values)
-        confidence = score
         if problem:
-            confidence = max(10, score - 45)
             mapping.notes[field.value] = f"'{headers[index]}': {problem}"
-        elif ratio < 0.9 and (field in DATE_FIELDS or field in MONEY_FIELDS):
-            confidence = max(10, score - 15)
         mapping.fields[field.value] = headers[index]
         mapping.confidence[field.value] = confidence
         used_columns.add(index)
 
     _fill_by_content(headers, rows, mapping, used_columns)
+    _prefer_balance_consistent_amount(headers, rows, mapping)
 
     date_values: list[str] = []
     for field in DATE_FIELDS:

@@ -149,3 +149,10 @@ def test_accounting_rows_without_account_column_are_filtered_by_name(tmp_path):
     )
     assert [t.invoice_number for t in kept] == ["A-1"]
     assert excluded == 1
+
+
+def test_supplier_names_with_umlauts_and_accents():
+    assert normalize_supplier_name("Lindqvist Küchentechnik GmbH") == normalize_supplier_name(
+        "Lindqvist Kuechentechnik GmbH"
+    )
+    assert normalize_supplier_name("Café Société SARL") == "CAFE SOCIETE"
