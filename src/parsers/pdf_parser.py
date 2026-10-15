@@ -225,8 +225,8 @@ class PDFStatementParser(BaseStatementParser):
                     f"The PDF has {page_count} pages; the maximum supported is {MAX_PDF_PAGES}."
                 )
             for page_number, page in enumerate(pdf.pages, start=1):
-                for table in page.extract_tables() or []:
-                    for row_number, row in enumerate(table, start=1):
+                for extracted in page.extract_tables() or []:
+                    for row_number, row in enumerate(extracted, start=1):
                         ruled_grid.append([c or "" for c in row])
                         ruled_labels.append(f"page {page_number}, table row {row_number}")
                 raw_words = page.extract_words(x_tolerance=1.5, y_tolerance=3)

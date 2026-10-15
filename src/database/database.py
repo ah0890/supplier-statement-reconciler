@@ -41,6 +41,10 @@ class Database:
         self.engine = create_db_engine(url)
         self._factory = sessionmaker(bind=self.engine, expire_on_commit=False, future=True)
 
+    def dispose(self) -> None:
+        """Close all pooled connections."""
+        self.engine.dispose()
+
     @contextmanager
     def session(self) -> Iterator[Session]:
         session = self._factory()

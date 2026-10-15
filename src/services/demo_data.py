@@ -26,6 +26,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from openpyxl.worksheet.worksheet import Worksheet
 
 DEMO_SUPPLIER = "Brightline Industrial Supplies Ltd"
 DEMO_SUPPLIER_ACCOUNT = "BIS-00417"
@@ -296,9 +297,10 @@ def _write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:
 def _write_xlsx(path: Path, rows: Sequence[Sequence[object]], title: str) -> None:
     workbook = Workbook()
     sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
     sheet.title = title
     for row in rows:
-        sheet.append(row)
+        sheet.append(list(row))
     for cell in sheet[1]:
         cell.font = Font(bold=True)
     fixed = datetime(2026, 10, 1)  # reproducible output

@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, cast
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -75,7 +76,7 @@ SHEETS: tuple[tuple[str, Callable[[ResultRow], bool]], ...] = (
 
 
 def _write_cell(sheet: Worksheet, row: int, column: int, value: object, header: str = ""):
-    cell = sheet.cell(row=row, column=column, value=safe_text(value))
+    cell = sheet.cell(row=row, column=column, value=cast(Any, safe_text(value)))
     lower = header.lower()
     if isinstance(value, Decimal) or (
         isinstance(value, int | float) and any(w in lower for w in ("amount", "difference"))
@@ -101,7 +102,7 @@ def _write_table(sheet: Worksheet, records: Sequence[dict], start_row: int = 1) 
             cell.border = Border(bottom=THIN)
             if header in ("Reason", "Description", "Details", "Data"):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
-    sheet.freeze_panes = sheet.cell(row=start_row + 1, column=1)
+    sheet.freeze_panes = f"A{start_row + 1}"
     sheet.auto_filter.ref = (
         f"A{start_row}:{get_column_letter(len(headers))}{start_row + len(records)}"
     )
@@ -189,6 +190,7 @@ class ExportService:
     def workbook_bytes(self, context: ExportContext) -> bytes:
         workbook = Workbook()
         sheet = workbook.active
+        assert isinstance(sheet, Worksheet)
         sheet.title = "Summary"
         sheet["A1"] = "Supplier Statement Reconciliation"
         sheet["A1"].font = TITLE_FONT

@@ -224,6 +224,8 @@ class ImportService:
                 "The uploaded file is no longer available on disk. Please upload it again."
             )
         sheet = (file_row.import_options or {}).get("sheet_name")
+        table: RawTable | None
+        mapping_used: ColumnMapping | None
         try:
             if role == FileRole.STATEMENT:
                 parser = (

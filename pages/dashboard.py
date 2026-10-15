@@ -36,7 +36,7 @@ def demo_button(primary: bool = False) -> None:
         st.switch_page("pages/reconciliation.py")
 
 
-reconciliations = service.list()
+reconciliations = service.list_all()
 if not reconciliations:
     empty_state(
         "No reconciliations yet",

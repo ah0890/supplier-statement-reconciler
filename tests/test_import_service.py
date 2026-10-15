@@ -151,3 +151,10 @@ def test_create_validation(services):
                 period_end=date(2026, 9, 1),
             )
         )
+
+
+def test_previous_suppliers_are_listed(services):
+    _, recon_service, _, _ = services
+    suppliers = recon_service.suppliers()
+    assert [s.name for s in suppliers] == ["Acme Supplies Ltd"]
+    assert suppliers[0].normalized_name == "ACME SUPPLIES"

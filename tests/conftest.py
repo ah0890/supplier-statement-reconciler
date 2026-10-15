@@ -12,8 +12,10 @@ from src.models.transaction import CanonicalTransaction, TransactionSource, Tran
 
 
 @pytest.fixture
-def database(tmp_path) -> Database:
-    return Database(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+def database(tmp_path):
+    db = Database(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    yield db
+    db.dispose()
 
 
 def make_txn(

@@ -36,7 +36,8 @@ from src.models.reconciliation import (
 )
 from src.models.transaction import CanonicalTransaction, TransactionSource, TransactionType
 
-_TXN_TABLES = {
+TxnTable = type[StatementTransactionRow] | type[AccountingTransactionRow] | type[PaymentRow]
+_TXN_TABLES: dict[TransactionSource, TxnTable] = {
     TransactionSource.STATEMENT: StatementTransactionRow,
     TransactionSource.ACCOUNTING: AccountingTransactionRow,
     TransactionSource.PAYMENTS: PaymentRow,

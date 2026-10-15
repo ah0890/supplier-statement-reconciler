@@ -47,7 +47,7 @@ pages = {
 
 with st.sidebar:
     st.markdown("### Supplier Statement Reconciler")
-    reconciliations = reconciliation_service().list()
+    reconciliations = reconciliation_service().list_all()
     if reconciliations:
         ids = [r.id for r in reconciliations]
         labels = {r.id: reconciliation_label(r) for r in reconciliations}

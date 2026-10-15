@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import Any
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -65,7 +66,7 @@ def _fmt(value: object) -> str:
 
 def _grid(data: list[list], widths: Sequence[float], header: bool = True) -> Table:
     table = Table(data, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
-    style = [
+    style: list[Any] = [
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LINEBELOW", (0, 0), (-1, -1), 0.4, BORDER),
@@ -190,8 +191,9 @@ class ReportService:
     def _exception_table(rows: Sequence[ResultRow], width: float, styles) -> Table:
         widths = [32 * mm, 20 * mm, 24 * mm, 20 * mm, 24 * mm, 22 * mm]
         widths.append(width - sum(widths))
-        data = [["Reference", "Stmt date", "Stmt amount", "Acct date", "Acct amount",
-                 "Difference", "Reason"]]  # fmt: skip
+        header = ["Reference", "Stmt date", "Stmt amount", "Acct date", "Acct amount",
+                  "Difference", "Reason"]  # fmt: skip
+        data: list[list[Any]] = [header]
         for r in rows:
             data.append([
                 Paragraph(escape(r.reference), styles["cell"]),

@@ -108,17 +108,17 @@ class ReconciliationEngine:
                 possible_duplicates.setdefault(finding.duplicate.transaction_id, finding)
 
         for txn in matching.unmatched_statement:
-            finding = possible_duplicates.get(txn.transaction_id)
-            if finding is not None:
-                results.append(self.duplicate_result(finding))
+            duplicate = possible_duplicates.get(txn.transaction_id)
+            if duplicate is not None:
+                results.append(self.duplicate_result(duplicate))
             else:
                 results.append(
                     self.missing_result(txn, matching.ambiguous.get(txn.transaction_id, []))
                 )
         for txn in matching.unmatched_accounting:
-            finding = possible_duplicates.get(txn.transaction_id)
-            if finding is not None:
-                results.append(self.duplicate_result(finding))
+            duplicate = possible_duplicates.get(txn.transaction_id)
+            if duplicate is not None:
+                results.append(self.duplicate_result(duplicate))
             else:
                 results.append(self.accounting_only_result(txn, period_end))
 

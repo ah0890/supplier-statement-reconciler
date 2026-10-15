@@ -25,6 +25,7 @@ from src.models.reconciliation import (
     ReconciliationRun,
     ReconciliationSummary,
 )
+from src.models.supplier import Supplier
 from src.models.transaction import CanonicalTransaction, StatementBalances, TransactionSource
 from src.reconciliation.engine import ReconciliationEngine
 from src.utils.normalization import normalize_supplier_name
@@ -142,6 +143,21 @@ class ReconciliationService:
             logger.info("Created reconciliation %s", recon.id)
             return recon.id
 
+    def suppliers(self) -> list[Supplier]:
+        """Suppliers used in earlier reconciliations (for quick re-use)."""
+        with self.database.session() as session:
+            return [
+                Supplier(
+                    id=row.id,
+                    name=row.name,
+                    normalized_name=row.normalized_name,
+                    account_number=row.account_number,
+                    contact_reference=row.contact_reference,
+                    currency=row.currency,
+                )
+                for row in Repository(session).list_suppliers()
+            ]
+
     def get(self, reconciliation_id: int) -> ReconciliationRow | None:
         with self.database.session() as session:
             recon = Repository(session).get_reconciliation(reconciliation_id)
@@ -149,7 +165,7 @@ class ReconciliationService:
                 _ = recon.supplier  # load relationship before the session closes
             return recon
 
-    def list(self) -> list[ReconciliationRow]:
+    def list_all(self) -> list[ReconciliationRow]:
         with self.database.session() as session:
             rows = list(Repository(session).list_reconciliations())
             for row in rows:
