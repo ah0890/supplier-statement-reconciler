@@ -1,0 +1,24 @@
+[project]
+name = "supplier-statement-reconciler"
+version = "0.1.0"
+description = "Automated first-pass reconciliation of supplier statements against accounting records."
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"pages/*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+filterwarnings = ["ignore::DeprecationWarning:pdfminer.*"]

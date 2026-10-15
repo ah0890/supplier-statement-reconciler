@@ -1,0 +1,52 @@
+# --- Secrets & local configuration ---------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python ----------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Tooling caches ----------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Editors / OS -------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+~$*
+*.tmp
+*.temp
+*.swp
+
+# --- Local runtime data (CLIENT DATA - never commit) --------------------------
+# Everything the app writes at runtime lives under data/.
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Folders intended for real/private client documents used in local testing.
+client_data/
+private/
+real_documents/
+exports/
+
+# Streamlit local secrets
+.streamlit/secrets.toml

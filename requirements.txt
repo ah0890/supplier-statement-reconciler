@@ -1,0 +1,12 @@
+# Runtime dependencies (all free / open-source - see docs/FREE_RESOURCES.md)
+streamlit>=1.40,<2
+pandas>=2.2,<4
+SQLAlchemy>=2.0,<3
+openpyxl>=3.1,<4
+pdfplumber>=0.11,<1
+PyMuPDF>=1.24,<2
+RapidFuzz>=3.9,<4
+pydantic>=2.7,<3
+python-dotenv>=1.0,<2
+plotly>=5.22,<8
+reportlab>=4.2,<6
