@@ -27,6 +27,7 @@ from src.models.reconciliation import (
 )
 from src.models.transaction import CanonicalTransaction, StatementBalances, TransactionType
 from src.reconciliation.confidence import ConfidenceScorer
+from src.reconciliation.duplicate_detector import DuplicateDetector, DuplicateFinding
 from src.reconciliation.matcher import InvoiceMatcher, MatchPair
 from src.utils.dates import format_date
 from src.utils.money import format_money
@@ -52,6 +53,7 @@ class ReconciliationEngine:
         self.config = config or ReconciliationConfig()
         self.scorer = ConfidenceScorer(self.config)
         self.matcher = InvoiceMatcher(self.config, self.scorer)
+        self.duplicates = DuplicateDetector(self.config)
 
     def run(
         self,
@@ -66,15 +68,53 @@ class ReconciliationEngine:
         statement_docs = [t for t in statement if t.is_document]
         accounting_docs = [t for t in accounting if t.is_document]
 
-        matching = self.matcher.match(statement_docs, accounting_docs)
-        results: list[MatchResult] = [self._pair_result(p) for p in matching.pairs]
-        results += [
-            self._missing_result(t, matching.ambiguous.get(t.transaction_id, []))
-            for t in matching.unmatched_statement
-        ]
-        results += [
-            self._accounting_only_result(t, period_end) for t in matching.unmatched_accounting
-        ]
+        # 1. Duplicates within each side; near-certain copies leave the matching pool.
+        results: list[MatchResult] = []
+        possible_duplicates: dict[str, DuplicateFinding] = {}
+        pools = []
+        for docs in (statement_docs, accounting_docs):
+            excluded: set[str] = set()
+            for finding in self.duplicates.find_reference_duplicates(docs):
+                if finding.exclude_from_matching:
+                    excluded.add(finding.duplicate.transaction_id)
+                    results.append(self._duplicate_result(finding))
+                else:
+                    possible_duplicates.setdefault(finding.duplicate.transaction_id, finding)
+                    possible_duplicates.setdefault(
+                        finding.original.transaction_id,
+                        DuplicateFinding(
+                            finding.original, finding.duplicate, finding.confidence,
+                            finding.reason,
+                        ),
+                    )  # fmt: skip
+            pools.append([d for d in docs if d.transaction_id not in excluded])
+
+        # 2. Layered matching.
+        matching = self.matcher.match(pools[0], pools[1])
+        results += [self._pair_result(p) for p in matching.pairs]
+
+        # 3. Unmatched records: possible duplicates first, then missing / accounting-only.
+        for side_unmatched, pool in (
+            (matching.unmatched_statement, pools[0]),
+            (matching.unmatched_accounting, pools[1]),
+        ):
+            for finding in self.duplicates.find_near_duplicates(side_unmatched, pool):
+                possible_duplicates.setdefault(finding.duplicate.transaction_id, finding)
+
+        for txn in matching.unmatched_statement:
+            finding = possible_duplicates.get(txn.transaction_id)
+            if finding is not None:
+                results.append(self._duplicate_result(finding))
+            else:
+                results.append(
+                    self._missing_result(txn, matching.ambiguous.get(txn.transaction_id, []))
+                )
+        for txn in matching.unmatched_accounting:
+            finding = possible_duplicates.get(txn.transaction_id)
+            if finding is not None:
+                results.append(self._duplicate_result(finding))
+            else:
+                results.append(self._accounting_only_result(txn, period_end))
 
         run = ReconciliationRun(
             results=results,
@@ -132,6 +172,29 @@ class ReconciliationEngine:
             amount_difference=difference,
             days_difference=days,
             **self._base(pair.method, pair.confidence),
+        )
+
+    def _duplicate_result(self, finding: DuplicateFinding) -> MatchResult:
+        txn = finding.duplicate
+        on_statement = txn.source.value == "STATEMENT"
+        requires_review = finding.confidence < self.config.auto_accept_threshold
+        return MatchResult(
+            status=MatchStatus.DUPLICATE,
+            kind=_KIND[txn.transaction_type],
+            statement_txn_id=txn.transaction_id if on_statement else None,
+            accounting_txn_id=None if on_statement else txn.transaction_id,
+            related_txn_ids=[finding.original.transaction_id],
+            confidence_score=finding.confidence,
+            confidence_band=self.scorer.band(finding.confidence),
+            matching_method=MatchMethod.DUPLICATE_CHECK,
+            matching_reason=(
+                ("On the supplier statement: " if on_statement else "In the accounting records: ")
+                + finding.reason
+            ),
+            statement_amount=txn.amount if on_statement else None,
+            accounting_amount=None if on_statement else txn.amount,
+            requires_review=requires_review,
+            review_status=ReviewStatus.PENDING if requires_review else ReviewStatus.NOT_REQUIRED,
         )
 
     def _missing_result(self, txn: CanonicalTransaction, ambiguous: list[str]) -> MatchResult:
