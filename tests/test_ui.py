@@ -35,6 +35,7 @@ PAGES = [
     "pages/mapping.py",
     "pages/reconciliation.py",
     "pages/exceptions.py",
+    "pages/reports.py",
     "pages/settings.py",
 ]
 

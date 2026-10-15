@@ -38,6 +38,7 @@ pages = {
         st.Page("pages/mapping.py", title="Column Mapping", icon=":material/table_view:"),
         st.Page("pages/reconciliation.py", title="Reconciliation", icon=":material/rule:"),
         st.Page("pages/exceptions.py", title="Exceptions", icon=":material/report:"),
+        st.Page("pages/reports.py", title="Reports", icon=":material/summarize:"),
     ],
     "Administration": [
         st.Page("pages/settings.py", title="Settings", icon=":material/settings:"),
