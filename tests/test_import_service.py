@@ -158,3 +158,11 @@ def test_previous_suppliers_are_listed(services):
     suppliers = recon_service.suppliers()
     assert [s.name for s in suppliers] == ["Acme Supplies Ltd"]
     assert suppliers[0].normalized_name == "ACME SUPPLIES"
+
+
+def test_transactions_reference_the_original_file_name(services, database):
+    importer, _, recon_id, _ = services
+    importer.upload(recon_id, FileRole.STATEMENT, "September statement.csv", STATEMENT)
+    with database.session() as session:
+        txns = Repository(session).get_transactions(recon_id, TransactionSource.STATEMENT)
+    assert {t.source_file for t in txns} == {"September statement.csv"}

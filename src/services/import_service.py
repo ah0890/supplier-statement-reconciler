@@ -203,6 +203,8 @@ class ImportService:
                 outcome.result.report,
                 filter_supplier=role != FileRole.STATEMENT,
             )
+            for txn in kept:  # show the name the user uploaded, not the storage name
+                txn.source_file = file_row.original_name
             outcome.result.transactions = kept
             outcome.result.excluded_other_suppliers = excluded
             outcome.result.report.valid = len(kept)
