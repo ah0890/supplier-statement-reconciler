@@ -49,3 +49,10 @@ def flash(message: str, kind: str = "success") -> None:
 def show_flash() -> None:
     for kind, message in st.session_state.pop("_flash", []):
         getattr(st, kind)(message)
+
+
+@st.cache_resource
+def review_service():
+    from src.services.review_service import ReviewService
+
+    return ReviewService(get_database(), reconciliation_service())

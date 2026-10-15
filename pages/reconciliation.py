@@ -138,6 +138,10 @@ visible = [
 st.caption(f"Showing {len(visible)} of {len(rows)} result(s).")
 dataframe([row.as_record() for row in visible], height=420)
 
+st.page_link(
+    "pages/exceptions.py", label="Investigate exceptions side by side", icon=":material/report:"
+)
+
 # ---------------------------------------------------------------- balance
 st.subheader("Balance check")
 st.markdown(status_badge(balance.status.value) + f" &nbsp; {balance.reason}",

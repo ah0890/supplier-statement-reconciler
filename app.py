@@ -37,6 +37,7 @@ pages = {
                 icon=":material/account_balance:"),
         st.Page("pages/mapping.py", title="Column Mapping", icon=":material/table_view:"),
         st.Page("pages/reconciliation.py", title="Reconciliation", icon=":material/rule:"),
+        st.Page("pages/exceptions.py", title="Exceptions", icon=":material/report:"),
     ],
     "Administration": [
         st.Page("pages/settings.py", title="Settings", icon=":material/settings:"),

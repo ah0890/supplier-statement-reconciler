@@ -34,6 +34,7 @@ PAGES = [
     "pages/accounting_data.py",
     "pages/mapping.py",
     "pages/reconciliation.py",
+    "pages/exceptions.py",
     "pages/settings.py",
 ]
 

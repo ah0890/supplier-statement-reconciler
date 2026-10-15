@@ -83,7 +83,7 @@ class ReconciliationEngine:
             for finding in self.duplicates.find_reference_duplicates(docs):
                 if finding.exclude_from_matching:
                     excluded.add(finding.duplicate.transaction_id)
-                    results.append(self._duplicate_result(finding))
+                    results.append(self.duplicate_result(finding))
                 else:
                     possible_duplicates.setdefault(finding.duplicate.transaction_id, finding)
                     possible_duplicates.setdefault(
@@ -110,17 +110,17 @@ class ReconciliationEngine:
         for txn in matching.unmatched_statement:
             finding = possible_duplicates.get(txn.transaction_id)
             if finding is not None:
-                results.append(self._duplicate_result(finding))
+                results.append(self.duplicate_result(finding))
             else:
                 results.append(
-                    self._missing_result(txn, matching.ambiguous.get(txn.transaction_id, []))
+                    self.missing_result(txn, matching.ambiguous.get(txn.transaction_id, []))
                 )
         for txn in matching.unmatched_accounting:
             finding = possible_duplicates.get(txn.transaction_id)
             if finding is not None:
-                results.append(self._duplicate_result(finding))
+                results.append(self.duplicate_result(finding))
             else:
-                results.append(self._accounting_only_result(txn, period_end))
+                results.append(self.accounting_only_result(txn, period_end))
 
         # 4. Payments and allocation.
         statement_payments = [t for t in statement if not t.is_document]
@@ -210,7 +210,7 @@ class ReconciliationEngine:
             **self._base(pair.method, pair.confidence),
         )
 
-    def _duplicate_result(self, finding: DuplicateFinding) -> MatchResult:
+    def duplicate_result(self, finding: DuplicateFinding) -> MatchResult:
         txn = finding.duplicate
         on_statement = txn.source.value == "STATEMENT"
         requires_review = finding.confidence < self.config.auto_accept_threshold
@@ -233,7 +233,7 @@ class ReconciliationEngine:
             review_status=ReviewStatus.PENDING if requires_review else ReviewStatus.NOT_REQUIRED,
         )
 
-    def _missing_result(self, txn: CanonicalTransaction, ambiguous: list[str]) -> MatchResult:
+    def missing_result(self, txn: CanonicalTransaction, ambiguous: list[str]) -> MatchResult:
         reason = (
             f"{describe(txn)} dated {format_date(txn.invoice_date, 'n/a')} for "
             f"{format_money(txn.amount)} is on the supplier statement but was not found in "
@@ -259,7 +259,7 @@ class ReconciliationEngine:
             review_status=ReviewStatus.PENDING if ambiguous else ReviewStatus.NOT_REQUIRED,
         )
 
-    def _accounting_only_result(
+    def accounting_only_result(
         self, txn: CanonicalTransaction, period_end: date | None
     ) -> MatchResult:
         reason = (
