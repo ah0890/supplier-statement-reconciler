@@ -60,8 +60,7 @@ else:
         readiness = service.readiness(recon.id)
         st.subheader("Next steps")
         if readiness.blocking:
-            for step in readiness.blocking:
-                st.markdown(f"- {step}")
+            bullet_list(readiness.blocking)
         else:
             st.success("Both files are imported. You can run the reconciliation now.")
             st.page_link(

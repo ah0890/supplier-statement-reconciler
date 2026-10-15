@@ -17,7 +17,9 @@ from src.services.result_views import build_rows, summary_messages
 from ui.components import (
     bullet_list,
     dataframe,
+    esc,
     kpi_row,
+    md_escape,
     money,
     page_header,
     require_reconciliation,
@@ -144,7 +146,7 @@ st.page_link(
 
 # ---------------------------------------------------------------- balance
 st.subheader("Balance check")
-st.markdown(status_badge(balance.status.value) + f" &nbsp; {balance.reason}",
+st.markdown(status_badge(balance.status.value) + f" &nbsp; {esc(balance.reason)}",
             unsafe_allow_html=True)  # fmt: skip
 left, right = st.columns(2)
 with left:
@@ -175,11 +177,10 @@ with right:
         highlight={"Unexplained"} if balance.unexplained_difference else set(),
     )
     if balance.accounting_balance_basis:
-        st.caption(f"Accounting balance basis: {balance.accounting_balance_basis}.")
+        st.caption(f"Accounting balance basis: {md_escape(balance.accounting_balance_basis)}.")
 if balance.running_balance_breaks:
     with st.expander(f"Running balance breaks ({len(balance.running_balance_breaks)})"):
-        for line in balance.running_balance_breaks:
-            st.markdown(f"- {line}")
+        bullet_list(balance.running_balance_breaks)
 if stored.allocations or stored.unallocated_payments:
     with st.expander("Payment allocation"):
         if stored.allocations:
@@ -192,8 +193,7 @@ if stored.allocations or stored.unallocated_payments:
                     for a in stored.allocations
                 ]
             )  # fmt: skip
-        for line in stored.unallocated_payments:
-            st.markdown(f"- {line}")
+        bullet_list(stored.unallocated_payments)
 
 # --------------------------------------------------------------- finalise
 st.subheader("Finalise")
@@ -201,7 +201,7 @@ if recon.outcome:
     st.markdown(
         "This reconciliation is marked "
         + status_badge(recon.outcome)
-        + (f" — {recon.outcome_note}" if recon.outcome_note else ""),
+        + (f" — {esc(recon.outcome_note)}" if recon.outcome_note else ""),
         unsafe_allow_html=True,
     )
     if st.button("Reopen"):
@@ -211,7 +211,7 @@ else:
     st.markdown(
         "Suggested outcome: "
         + status_badge(summary.suggested_outcome.value)
-        + f" — {summary.suggested_outcome_reason}",
+        + f" — {esc(summary.suggested_outcome_reason)}",
         unsafe_allow_html=True,
     )
     with st.form("finalise"):

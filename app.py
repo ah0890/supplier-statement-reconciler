@@ -5,6 +5,9 @@ Run with:  streamlit run app.py
 
 from __future__ import annotations
 
+import logging
+import uuid
+
 import streamlit as st
 
 from src.config import get_settings
@@ -13,6 +16,7 @@ from ui.components import reconciliation_label
 from ui.state import current_id, reconciliation_service, set_current
 from ui.theme import apply_theme
 
+logger = logging.getLogger("app")
 settings = get_settings()
 setup_logging(settings.log_level, settings.log_dir)
 
@@ -70,4 +74,13 @@ with st.sidebar:
         st.caption("No reconciliations yet.")
 
 navigation = st.navigation(pages)
-navigation.run()
+try:
+    navigation.run()
+except Exception:  # Streamlit's stop/rerun signals derive from BaseException and pass through
+    error_id = uuid.uuid4().hex[:8]
+    logger.exception("Unhandled error on page %s (error id %s)", navigation.title, error_id)
+    st.error(
+        "Something went wrong while displaying this page. Your data has not been changed. "
+        f"Please try again; if the problem persists, quote error reference {error_id} "
+        "(details are in the application log)."
+    )

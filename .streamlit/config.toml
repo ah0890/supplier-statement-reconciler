@@ -8,6 +8,9 @@ gatherUsageStats = false
 
 [client]
 toolbarMode = "minimal"
+# Users see a friendly message; technical details go to data/logs/reconciler.log.
+# Set to "full" while developing.
+showErrorDetails = "none"
 
 [theme]
 base = "light"

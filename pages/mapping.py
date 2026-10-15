@@ -11,7 +11,7 @@ from src.parsers.columns import (
     missing_required_fields,
 )
 from src.services.import_service import FileRole, ImportServiceError
-from ui.components import badge, dataframe, page_header, require_reconciliation, workflow_steps
+from ui.components import badge, dataframe, esc, page_header, require_reconciliation, workflow_steps
 from ui.import_panel import validation_summary
 from ui.state import flash, import_service
 
@@ -98,7 +98,7 @@ for tab, role in zip(tabs, roles, strict=True):
                         note = mapping.notes.get(field.value, "")
                         st.markdown(
                             badge(f"detected · {confidence}% confidence", tone)
-                            + (f" <small>{note}</small>" if note else ""),
+                            + (f" <small>{esc(note)}</small>" if note else ""),
                             unsafe_allow_html=True,
                         )
                 if choice != NOT_MAPPED:

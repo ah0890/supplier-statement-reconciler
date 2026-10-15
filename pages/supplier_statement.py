@@ -7,7 +7,7 @@ import streamlit as st
 from src.models.transaction import TransactionType
 from src.services.import_service import FileRole
 from src.utils.money import format_money, money_sum, parse_amount
-from ui.components import page_header, require_reconciliation, workflow_steps
+from ui.components import md_escape, page_header, require_reconciliation, workflow_steps
 from ui.import_panel import (
     remove_button,
     stored_transactions,
@@ -39,7 +39,9 @@ if summary is None:
 
 st.divider()
 st.subheader("Extraction result")
-st.caption(f"File: {summary.get('file_name')} · Parser: {summary.get('parser') or 'n/a'}")
+st.caption(
+    f"File: {md_escape(summary.get('file_name'))} · Parser: {summary.get('parser') or 'n/a'}"
+)
 validation_summary(recon, FileRole.STATEMENT)
 
 transactions = stored_transactions(recon, FileRole.STATEMENT)

@@ -14,6 +14,8 @@ from ui.components import (
     badge,
     dataframe,
     empty_state,
+    esc,
+    md_escape,
     money,
     page_header,
     require_reconciliation,
@@ -111,7 +113,7 @@ result = results_by_id[row.result_id]
 # -------------------------------------------------------- side-by-side view
 st.divider()
 st.markdown(
-    f"#### {row.reference} &nbsp; {status_badge(row.status.value)} "
+    f"#### {esc(row.reference)} &nbsp; {status_badge(row.status.value)} "
     + badge(KIND_LABELS[row.kind], "blue"),
     unsafe_allow_html=True,
 )
@@ -169,11 +171,11 @@ side_panel(
     ],
     highlight={"Difference"} if result.amount_difference else set(),
 )  # fmt: skip
-st.markdown(f"**Reason.** {result.matching_reason}")
+st.markdown(f"**Reason.** {md_escape(result.matching_reason)}")
 if result.original_status:
     st.caption(f"Originally: {result.original_status.label}.")
 if result.review_note:
-    st.caption(f"Reviewer note: {result.review_note}")
+    st.caption(f"Reviewer note: {md_escape(result.review_note)}")
 if len(related) > 1:
     with st.expander(f"Other candidates ({len(related)})"):
         dataframe(

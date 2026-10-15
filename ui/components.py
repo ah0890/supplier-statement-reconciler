@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import html
+import re
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -45,7 +46,16 @@ WORKFLOW_STEPS = (
 
 
 def esc(value: object) -> str:
+    """Escape text for HTML snippets rendered with unsafe_allow_html."""
     return html.escape(str(value))
+
+
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
+
+
+def md_escape(value: object) -> str:
+    """Escape text from client documents for Markdown (no links, images or formatting)."""
+    return _MD_SPECIAL.sub(r"\\\1", str(value))
 
 
 def badge(text: str, tone: str = "grey") -> str:
@@ -205,4 +215,4 @@ def workflow_badge(recon: ReconciliationRow) -> str:
 
 def bullet_list(lines: Sequence[str]) -> None:
     """Render lines as one compact bulleted list."""
-    st.markdown("\n".join(f"- {esc(line)}" for line in lines))
+    st.markdown("\n".join(f"- {md_escape(line)}" for line in lines))
