@@ -205,7 +205,5 @@ def test_matching_5000_records_is_fast():
     run = ReconciliationEngine().run(statement, accounting)
     elapsed = time.perf_counter() - started
     assert elapsed < 10, f"took {elapsed:.1f}s"
-    matched = sum(
-        r.status in (MatchStatus.MATCHED, MatchStatus.REFERENCE_MISMATCH) for r in run.results
-    )
-    assert matched >= 4900
+    paired = sum(bool(r.statement_txn_id and r.accounting_txn_id) for r in run.results)
+    assert paired == 5000

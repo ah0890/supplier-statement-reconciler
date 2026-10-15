@@ -29,6 +29,7 @@ from src.models.transaction import CanonicalTransaction, StatementBalances, Tran
 from src.reconciliation.confidence import ConfidenceScorer
 from src.reconciliation.duplicate_detector import DuplicateDetector, DuplicateFinding
 from src.reconciliation.matcher import InvoiceMatcher, MatchPair
+from src.reconciliation.mismatch_detector import MismatchDetector
 from src.utils.dates import format_date
 from src.utils.money import format_money
 
@@ -54,6 +55,7 @@ class ReconciliationEngine:
         self.scorer = ConfidenceScorer(self.config)
         self.matcher = InvoiceMatcher(self.config, self.scorer)
         self.duplicates = DuplicateDetector(self.config)
+        self.mismatches = MismatchDetector(self.config)
 
     def run(
         self,
@@ -91,7 +93,7 @@ class ReconciliationEngine:
 
         # 2. Layered matching.
         matching = self.matcher.match(pools[0], pools[1])
-        results += [self._pair_result(p) for p in matching.pairs]
+        results += [self.build_pair_result(p) for p in matching.pairs]
 
         # 3. Unmatched records: possible duplicates first, then missing / accounting-only.
         for side_unmatched, pool in (
@@ -143,34 +145,26 @@ class ReconciliationEngine:
             "review_status": ReviewStatus.PENDING if requires_review else ReviewStatus.NOT_REQUIRED,
         }
 
-    def _pair_result(self, pair: MatchPair) -> MatchResult:
+    def build_pair_result(self, pair: MatchPair) -> MatchResult:
+        """Result for a matched pair (also used when a user confirms a match manually)."""
         stmt, acct = pair.statement, pair.accounting
-        difference = pair.amount_difference
-        days = pair.days_difference
-        within = abs(difference) <= self.config.amount_tolerance
-        exact = difference == 0 and (days in (None, 0))
-        if pair.method in (MatchMethod.FUZZY_REFERENCE, MatchMethod.AMOUNT_DATE_PROXIMITY):
-            status = MatchStatus.REFERENCE_MISMATCH
-        elif exact:
-            status = MatchStatus.MATCHED
-        elif within:
-            status = MatchStatus.MATCHED_WITH_TOLERANCE
-        else:
-            status = MatchStatus.UNRESOLVED
+        assessment = self.mismatches.assess(pair)
+        method_text = pair.method.value.replace("_", " ").lower()
         reason = (
-            f"{describe(stmt)} paired with accounting {acct.display_reference} "
-            f"({pair.method.value.replace('_', ' ').lower()})."
+            f"{describe(stmt)} matched to accounting {acct.display_reference} by "
+            f"{method_text}. {assessment.reason}"
         )
         return MatchResult(
-            status=status,
+            status=assessment.status,
             kind=_KIND[stmt.transaction_type],
             statement_txn_id=stmt.transaction_id,
             accounting_txn_id=acct.transaction_id,
             matching_reason=reason,
+            issues=assessment.issues,
             statement_amount=stmt.amount,
             accounting_amount=acct.amount,
-            amount_difference=difference,
-            days_difference=days,
+            amount_difference=pair.amount_difference,
+            days_difference=pair.days_difference,
             **self._base(pair.method, pair.confidence),
         )
 
