@@ -26,7 +26,7 @@ from src.models.transaction import (
 from src.models.validation import ImportResult, IssueSeverity, ValidationReport
 from src.parsers.columns import ColumnField, ColumnMapping, normalize_header
 from src.parsers.tabular import RawTable
-from src.utils.dates import parse_date
+from src.utils.dates import MONTH_FIRST_CURRENCIES, is_ambiguous_numeric_date, parse_date
 from src.utils.money import ZERO, parse_amount
 
 _OPENING = re.compile(
@@ -55,17 +55,17 @@ _MONEY_LIKE = re.compile(r"-?[\d,]+\.\d{2}")
 
 _CREDIT_TYPE = re.compile(
     r"\b(credit ?notes?|cr ?notes?|crn|cn|credit memo|vendor credit|accpaycredit|"
-    r"purchase credit|supplier credit|credit)\b",
+    r"purchase credit|supplier credit|credit|pc|sc)\b",
     re.IGNORECASE,
 )
 _PAYMENT_TYPE = re.compile(
     r"\b(payments?|pmt|paid|receipts?|remittance|bacs|cheque|check|chq|bill payment|"
-    r"direct debit|dd|transfer|faster payment|chaps|wire|ach|bank)\b",
+    r"direct debit|dd|transfer|faster payment|chaps|wire|ach|bank|pp|pa)\b",
     re.IGNORECASE,
 )
 _INVOICE_TYPE = re.compile(
     r"\b(invoices?|inv|bills?|accpay|purchase invoice|tax invoice|charge|debit note|sale|"
-    r"sales)\b",
+    r"sales|pi)\b",
     re.IGNORECASE,
 )
 _CREDIT_DESC = re.compile(r"\b(credit ?note|credit memo|crn|refund)\b", re.IGNORECASE)
@@ -126,6 +126,12 @@ class TableTransformer:
         }
         header_signature = {normalize_header(h) for h in table.headers if h}
         self._in_ageing_section = False
+        self._current_group: str | None = None
+        self._dayfirst = self.mapping.dayfirst
+        if self._dayfirst is None:
+            currency = (self.options.expected_currency or "").upper()
+            self._dayfirst = currency not in MONTH_FIRST_CURRENCIES
+        self._ambiguous_dates = False
 
         for warning in table.warnings:
             report.add(IssueSeverity.WARNING, warning)
@@ -141,12 +147,33 @@ class TableTransformer:
                 continue
 
             cells = _Cells(row, index)
+            group = self._group_heading(row)
+            if group is not None:
+                self._current_group = group
+                report.skipped += 1
+                continue
+            previous = transactions[-1] if transactions else None
+            if previous is not None and self._is_continuation(cells, row, previous, row_number):
+                # Wrapped description text belongs to the line above.
+                extra = cells.get(ColumnField.DESCRIPTION)
+                previous.description = f"{previous.description or ''} {extra}".strip()
+                report.skipped += 1
+                continue
             outcome = self._transform_row(cells, row, label, row_number, table, report, balances)
             if outcome is None:
                 report.skipped += 1
             else:
                 transactions.append(outcome)
 
+        if self.mapping.dayfirst is None and self._ambiguous_dates and transactions:
+            order = "DD/MM/YYYY" if self._dayfirst else "MM/DD/YYYY"
+            report.add(
+                IssueSeverity.WARNING,
+                f"The date order could not be determined from the file (no day above 12). "
+                f"Dates were read as {order}. Please confirm the date order on the Column "
+                "Mapping page.",
+                field="date",
+            )
         self._derive_balances(transactions, balances)
         report.valid = len(transactions)
         if not transactions:
@@ -182,6 +209,37 @@ class TableTransformer:
             return None, False
         return value, True
 
+    def _group_heading(self, row: list[str]) -> str | None:
+        """Supplier name heading in grouped reports (e.g. QuickBooks Vendor Balance Detail)."""
+        if self.options.source == TransactionSource.STATEMENT or self.mapping.has(
+            ColumnField.SUPPLIER_NAME
+        ):
+            return None
+        filled = [c.strip() for c in row if c.strip()]
+        if len(filled) != 1 or not row[0].strip():
+            return None
+        text = filled[0]
+        if (
+            _TOTAL.match(text) or _OPENING.search(text) or _CLOSING.search(text)
+            or parse_amount(text) is not None or parse_date(text) is not None
+            or not _WORDS.search(text)
+        ):  # fmt: skip
+            return None
+        return text
+
+    def _is_continuation(
+        self, cells: _Cells, row: list[str], previous: CanonicalTransaction, row_number: int
+    ) -> bool:
+        """A row holding only description text directly below a transaction."""
+        description = cells.get(ColumnField.DESCRIPTION)
+        if not description or previous.source_row != row_number - 1:
+            return False
+        filled = [c for c in row if c.strip()]
+        return filled == [description] and not (
+            _OPENING.search(description) or _CLOSING.search(description)
+            or _TOTAL.match(description) or _AGEING.search(description)
+        )  # fmt: skip
+
     @staticmethod
     def _money_cells_contain_words(cells: _Cells) -> bool:
         for field in (ColumnField.AMOUNT, ColumnField.DEBIT, ColumnField.CREDIT,
@@ -206,7 +264,8 @@ class TableTransformer:
     ) -> CanonicalTransaction | None:
         opts = self.options
         raw_date = cells.get(ColumnField.DATE)
-        txn_date = parse_date(raw_date, dayfirst=self.mapping.dayfirst)
+        txn_date = parse_date(raw_date, dayfirst=self._dayfirst)
+        self._ambiguous_dates |= is_ambiguous_numeric_date(raw_date)
         row_text = self._row_text(row)
         invoice_text = cells.get(ColumnField.INVOICE_NUMBER)
         reference_text = cells.get(ColumnField.REFERENCE)
@@ -313,14 +372,16 @@ class TableTransformer:
         return CanonicalTransaction(
             source=opts.source,
             transaction_type=txn_type,
-            supplier_name=cells.get(ColumnField.SUPPLIER_NAME) or opts.default_supplier,
+            supplier_name=cells.get(ColumnField.SUPPLIER_NAME)
+            or self._current_group
+            or opts.default_supplier,
             supplier_account=cells.get(ColumnField.SUPPLIER_ACCOUNT)
             or opts.default_supplier_account,
             invoice_number=invoice_number,
             reference=reference,
             related_invoice_number=related,
             invoice_date=txn_date,
-            due_date=parse_date(cells.get(ColumnField.DUE_DATE), dayfirst=self.mapping.dayfirst),
+            due_date=parse_date(cells.get(ColumnField.DUE_DATE), dayfirst=self._dayfirst),
             description=cells.get(ColumnField.DESCRIPTION) or None,
             subtotal=_abs(values[ColumnField.SUBTOTAL]),
             tax=_abs(values[ColumnField.TAX]),
@@ -355,7 +416,11 @@ class TableTransformer:
 
     @staticmethod
     def _amount_and_side(values: dict[ColumnField, Decimal | None]):
-        """Return (positive amount, 'debit'|'credit') or (None, None)."""
+        """Return (positive amount, side) or (None, None).
+
+        Side is 'debit', 'credit' (from Debit/Credit or Payment columns) or 'negative'
+        (a negative value in a signed Amount column).
+        """
         debit, credit = values[ColumnField.DEBIT], values[ColumnField.CREDIT]
         if debit or credit:
             net = (debit or ZERO) - (credit or ZERO)
@@ -364,7 +429,7 @@ class TableTransformer:
             return abs(net), "debit" if net > 0 else "credit"
         amount = values[ColumnField.AMOUNT]
         if amount is not None:
-            return abs(amount), "credit" if amount < 0 else "debit"
+            return abs(amount), "negative" if amount < 0 else "debit"
         payment = values[ColumnField.PAYMENT_AMOUNT]
         if payment is not None:
             return abs(payment), "credit"
@@ -396,7 +461,9 @@ class TableTransformer:
                 explicit = TransactionType.PAYMENT
 
         if explicit is not None:
-            if explicit == TransactionType.INVOICE and side == "credit":
+            # Ledger exports put invoices on the credit side, so only a *negative signed
+            # amount* turns an invoice-type row into a credit note.
+            if explicit == TransactionType.INVOICE and side == "negative":
                 return (
                     TransactionType.CREDIT_NOTE,
                     "invoice-type row with a negative/credit amount treated as a credit note.",
@@ -405,6 +472,8 @@ class TableTransformer:
 
         if side == "debit":
             return TransactionType.INVOICE, None
+        if side == "negative" and opts.source != TransactionSource.STATEMENT:
+            return TransactionType.CREDIT_NOTE, None
         return (
             opts.credit_default,
             f"credit entry without a type was classified as "

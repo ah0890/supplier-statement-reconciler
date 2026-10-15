@@ -18,8 +18,9 @@ from __future__ import annotations
 import csv
 import json
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -287,12 +288,12 @@ def _letterhead() -> list[list[str]]:
     ]
 
 
-def _write_csv(path: Path, rows: list[list[str]]) -> None:
+def _write_csv(path: Path, rows: Sequence[Sequence[str]]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         csv.writer(handle).writerows(rows)
 
 
-def _write_xlsx(path: Path, rows: list[list[object]], title: str) -> None:
+def _write_xlsx(path: Path, rows: Sequence[Sequence[object]], title: str) -> None:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = title
@@ -300,6 +301,8 @@ def _write_xlsx(path: Path, rows: list[list[object]], title: str) -> None:
         sheet.append(row)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
+    fixed = datetime(2026, 10, 1)  # reproducible output
+    workbook.properties.created = workbook.properties.modified = fixed
     workbook.save(path)
 
 
@@ -308,7 +311,7 @@ def write_statement_pdf(path: Path, data: DemoDataset, rows_per_page: int = 28) 
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
-    pdf = canvas.Canvas(str(path), pagesize=A4)
+    pdf = canvas.Canvas(str(path), pagesize=A4, invariant=1)  # reproducible output
     width, height = A4
     x = [36, 100, 160, 226, 410, 480, 552]  # Date, Type, Ref, Description | Debit, Credit, Balance
     right = {4, 5, 6}

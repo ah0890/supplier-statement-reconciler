@@ -84,6 +84,7 @@ SYNONYMS: dict[ColumnField, tuple[str, ...]] = {
         "invoice ref", "invoice reference", "invoicenumber", "document number", "document no",
         "doc no", "doc number", "bill number", "bill no", "num", "invoice id", "bill ref",
         "supplier invoice", "supplier invoice number", "vendor invoice", "number", "no",
+        "document", "doc ref", "invoice credit no",
     ),
     ColumnField.REFERENCE: (
         "reference", "ref", "ref no", "transaction reference", "trans ref", "our ref",
@@ -123,7 +124,7 @@ SYNONYMS: dict[ColumnField, tuple[str, ...]] = {
                      "account balance"),
     ColumnField.OUTSTANDING: (
         "outstanding", "amount due", "amountdue", "open balance", "balance due", "due amount",
-        "remaining", "unpaid", "open amount", "amount outstanding",
+        "remaining", "unpaid", "open amount", "amount outstanding", "o s",
     ),
     ColumnField.CURRENCY: ("currency", "curr", "ccy", "currency code", "currencycode"),
     ColumnField.SUPPLIER_NAME: (
@@ -240,9 +241,12 @@ def detect_mapping(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> Col
 
     _fill_by_content(headers, rows, mapping, used_columns)
 
-    date_col = mapping.column_for(ColumnField.DATE)
-    if date_col is not None:
-        mapping.dayfirst = infer_dayfirst(_column_values(headers, rows, date_col))
+    date_values: list[str] = []
+    for field in DATE_FIELDS:
+        column = mapping.column_for(field)
+        if column is not None:
+            date_values.extend(_column_values(headers, rows, column))
+    mapping.dayfirst = infer_dayfirst(date_values)
     money_values: list[str] = []
     for field in MONEY_FIELDS:
         column = mapping.column_for(field)

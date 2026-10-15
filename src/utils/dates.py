@@ -114,3 +114,17 @@ def days_between(first: date | None, second: date | None) -> int | None:
 
 def format_date(value: date | None, blank: str = "") -> str:
     return value.strftime("%d-%b-%Y") if value else blank
+
+
+def is_ambiguous_numeric_date(value: object) -> bool:
+    """True for numeric dates like 03/04/2026 where day and month could be swapped."""
+    if not isinstance(value, str):
+        return False
+    match = _NUMERIC_DATE.match(value.strip())
+    if not match:
+        return False
+    first, second = int(match.group(1)), int(match.group(2))
+    return first <= 12 and second <= 12 and first != second
+
+
+MONTH_FIRST_CURRENCIES = frozenset({"USD", "CAD"})
