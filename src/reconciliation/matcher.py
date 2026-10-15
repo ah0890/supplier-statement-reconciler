@@ -7,7 +7,8 @@ never claim a record that a stronger method would have matched:
 2. Reference "core" (significant digits) + amount within tolerance
 3. Reference core + date within tolerance
 4. Fuzzy reference similarity (RapidFuzz) among candidates filtered by amount
-   or date window
+   or date window, corroborated by an agreeing amount (or a near-identical
+   reference with an agreeing date)
 5. Supplier + amount + date proximity, only when the pairing is unambiguous
 
 Candidate lookups use dictionaries, a sorted amount index and a date index,
@@ -32,6 +33,7 @@ from src.utils.dates import days_between
 from src.utils.normalization import invoice_core, supplier_names_match
 
 MIN_CORE_LENGTH = 3
+NEAR_IDENTICAL_SIMILARITY = 95
 
 
 @dataclass
@@ -278,7 +280,14 @@ class InvoiceMatcher:
         pairs = []
         for acct in self._window_candidates(stmt, index):
             similarity = self._similarity(stmt, acct)
-            if similarity >= self.config.fuzzy_match_threshold:
+            if similarity < self.config.fuzzy_match_threshold:
+                continue
+            # Sequential invoice numbers are always "similar", so similarity alone is not
+            # evidence: the amount must agree, or the reference must be near-identical.
+            corroborated = self._amount_ok(stmt, acct) or (
+                similarity >= NEAR_IDENTICAL_SIMILARITY and self._date_ok(stmt, acct)
+            )
+            if corroborated:
                 pairs.append(self._pair(stmt, acct, MatchMethod.FUZZY_REFERENCE, similarity))
         return pairs
 

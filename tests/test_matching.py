@@ -68,6 +68,11 @@ def test_fuzzy_threshold_is_respected(stmt, acct):
     assert all(p.method != MatchMethod.FUZZY_REFERENCE for p in strict.pairs)
 
 
+def test_sequential_invoice_numbers_with_different_amounts_do_not_fuzzy_match(stmt, acct):
+    out = _match([stmt("INV-1003", "80.00", D)], [acct("INV-1009", "45.00", D)])
+    assert out.pairs == []
+
+
 def test_level5_amount_and_date_for_blank_reference(stmt, acct):
     out = _match([stmt(None, "321.45", D)], [acct("BILL-77", "321.45", D + timedelta(days=1))])
     assert out.pairs[0].method == MatchMethod.AMOUNT_DATE_PROXIMITY
